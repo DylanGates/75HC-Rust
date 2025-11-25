@@ -8,7 +8,7 @@ enum Manner {
 impl Manner {
     fn greet(&self, name: &str) -> String {
         match self {
-            Manner::Polite => format!("\nHello, nice to meet you {}!", name.to_uppercase()),
+            Manner::Polite => format!("\nHello, nice to meet you {}!\n", name),
             Manner::Rude => format!(
                 "\nOh, it's you {}...,
 ---\nI guess we have to say hi.\n",
@@ -19,33 +19,51 @@ impl Manner {
 }
 
 fn check_greeting(name: &str) -> Manner {
-    let first_char = name.chars().next().unwrap_or('\0');
+    if name.is_empty() {
+        return Manner::Rude;
+    }
 
-    if first_char.is_alphabetic() && first_char.is_uppercase() {
+    let mut is_start_of_word = true;
+
+    let is_polite = name.chars().all(|c| {
+        if c.is_whitespace() {
+            is_start_of_word = true;
+            true 
+        } else if c.is_alphabetic() {
+            if is_start_of_word {
+                is_start_of_word = false;
+                c.is_uppercase()
+            } else {
+                c.is_lowercase()
+            }
+        } else {
+            false
+        }
+    });
+
+    if is_polite {
         Manner::Polite
     } else {
         Manner::Rude
     }
 }
 
+
 fn main() {
     println!(
         "
 Nice to meet you!
-What is your name?"
+What is your name? (e.g., John or mary)"
     );
-    let mut name = String::new();
+    let mut name_input = String::new();
     io::stdin()
-        .read_line(&mut name)
+        .read_line(&mut name_input)
         .expect("Failed to read line");
-    name = name.trim().to_string();
+
+    let name = name_input.trim().to_string();
 
     let manner = check_greeting(&name);
-
-    let display_greeting = match manner {
-        Manner::Polite => manner.greet(&name),
-        Manner::Rude => manner.greet(&name),
-    };
+    let display_greeting = manner.greet(&name);
 
     println!("{}", display_greeting);
 
@@ -55,5 +73,13 @@ What is your name?"
     io::stdin()
         .read_line(&mut age)
         .expect("Failed to read line");
-    print!("\nYou are {} years old!", age);
+
+    match age.trim().parse::<u8>() {
+        Ok(age) => {
+            print!("\nYou are {} years old!", age);
+        }
+        Err(_) => {
+            print!("\nThat's not a valid age! Please enter a number.");
+        }
+    }
 }
