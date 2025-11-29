@@ -149,5 +149,17 @@ fn main() {
 
         let converted_value = convert_temp(temp_value, from_unit, to_unit);
         println!("\nConverted temperature: {:.2}\n", converted_value);
+
+        println!("Do you want to reverse the conversion (swap units)? (y/n): ");
+        let mut reverse_input = String::new();
+        io::stdin()
+            .read_line(&mut reverse_input)
+            .expect("Failed to read line");
+        let reverse_choice = reverse_input.trim().to_lowercase();
+
+        if reverse_choice == "y" || reverse_choice == "yes" {
+            let reversed_value = convert_temp(temp_value, to_unit, from_unit);
+            println!("\nReversed conversion: {:.2}\n", reversed_value);
+        }
     }
 }
