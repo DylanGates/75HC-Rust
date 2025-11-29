@@ -38,6 +38,16 @@ fn main() {
             }
         };
 
+        if temp_value < -273.15 {
+            println!("\nTemperature below absolute zero is not possible. Please enter a valid temperature.\n");
+            continue;
+        }
+
+        if temp_value.is_infinite() || temp_value.is_nan() {
+            println!("\nPlease enter a finite number for temperature value.\n");
+            continue;
+        }
+
         println!("\nSelect the unit to convert from (C/F/K): \n");
         let mut from_unit = String::new();
         io::stdin()
