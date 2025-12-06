@@ -1,0 +1,6 @@
+Line 1: card happy - Char count: 9
+Line 2: man - Char count: 3
+Line 3: friend - Char count: 6
+Line 4: girl - Char count: 4
+Line 5: gym - Char count: 3
+Line 6: word - Char count: 4
