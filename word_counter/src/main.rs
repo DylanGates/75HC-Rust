@@ -1,10 +1,12 @@
 use std::fs::File;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
-use std::fs::OpenOptions;
 use clap::{Parser, ValueEnum};
 use serde::Serialize;
 use walkdir::WalkDir;
+use indicatif::{ProgressBar, ProgressStyle};
+use rayon::prelude::*;
+use std::sync::Mutex;
 
 #[derive(Parser)]
 #[command(name = "word_counter")]
@@ -50,6 +52,12 @@ struct Summary {
     average_chars_per_line: f64,
 }
 
+struct FileProcessingResult {
+    results: Vec<LineResult>,
+    chars: usize,
+    lines: usize,
+}
+
 fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
 where
     P: AsRef<Path>,
@@ -86,6 +94,44 @@ fn has_valid_extension(path: &Path, extensions: &std::collections::HashSet<Strin
         .unwrap_or(false)
 }
 
+fn process_file(filename: &str, args: &Args) -> FileProcessingResult {
+    let mut file_results = Vec::new();
+    let mut file_chars = 0;
+    let mut file_lines = 0;
+
+    match read_lines(filename) {
+        Ok(lines) => {
+            for (line_number, line) in lines.enumerate() {
+                match line {
+                    Ok(content) => {
+                        let char_count = content.chars().filter(|c| !c.is_whitespace()).count();
+                        file_chars += char_count;
+                        file_lines += 1;
+
+                        file_results.push(LineResult {
+                            line_number: line_number + 1,
+                            content: content.clone(),
+                            char_count,
+                        });
+
+                        if args.format == OutputFormat::Text && args.output.is_none() {
+                            println!("File: {} - Line {}: {} - Char count: {}", filename, line_number + 1, content, char_count);
+                        }
+                    }
+                    Err(e) => eprintln!("Error reading line {} in {}: {}", line_number + 1, filename, e),
+                }
+            }
+        }
+        Err(e) => eprintln!("Error reading file {}: {}", filename, e),
+    }
+
+    FileProcessingResult {
+        results: file_results,
+        chars: file_chars,
+        lines: file_lines,
+    }
+}
+
 fn main() {
     let args = Args::parse();
     let files = collect_files(&args);
@@ -95,44 +141,39 @@ fn main() {
         return;
     }
 
+    let pb = ProgressBar::new(files.len() as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} ({eta})")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+
+    let pb_mutex = Mutex::new(pb);
+
+    let file_results: Vec<FileProcessingResult> = files
+        .par_iter()
+        .map(|filename| {
+            let result = process_file(filename, &args);
+            {
+                let pb = pb_mutex.lock().unwrap();
+                pb.inc(1);
+            }
+            result
+        })
+        .collect();
+
+    let pb = pb_mutex.into_inner().unwrap();
+    pb.finish_with_message("Processing complete");
+
     let mut all_results = Vec::new();
     let mut total_chars = 0;
     let mut total_lines = 0;
 
-    for filename in files {
-        match read_lines(&filename) {
-            Ok(lines) => {
-                let mut file_results = Vec::new();
-                let mut file_chars = 0;
-                let mut file_lines = 0;
-
-                for (line_number, line) in lines.enumerate() {
-                    match line {
-                        Ok(content) => {
-                            let char_count = content.chars().filter(|c| !c.is_whitespace()).count();
-                            file_chars += char_count;
-                            file_lines += 1;
-
-                            file_results.push(LineResult {
-                                line_number: line_number + 1,
-                                content: content.clone(),
-                                char_count,
-                            });
-
-                            if args.format == OutputFormat::Text && args.output.is_none() {
-                                println!("File: {} - Line {}: {} - Char count: {}", filename, line_number + 1, content, char_count);
-                            }
-                        }
-                        Err(e) => eprintln!("Error reading line {} in {}: {}", line_number + 1, filename, e),
-                    }
-                }
-
-                total_chars += file_chars;
-                total_lines += file_lines;
-                all_results.extend(file_results);
-            }
-            Err(e) => eprintln!("Error reading file {}: {}", filename, e),
-        }
+    for result in file_results {
+        all_results.extend(result.results);
+        total_chars += result.chars;
+        total_lines += result.lines;
     }
 
     match args.format {
