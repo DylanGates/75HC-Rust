@@ -32,8 +32,8 @@ fn main() {
             for line in lines {
                 match line {
                     Ok(content) => {
-                        let word_count = content.split_whitespace().count();
-                        println!("Line: {} - Word count: {}", content, word_count);
+                        let char_count = content.chars().filter(|c| !c.is_whitespace()).count();
+                        println!("Line: {} - Char count: {}", content, char_count);
                     }
                     Err(e) => eprintln!("Error reading line: {}", e),
                 }
