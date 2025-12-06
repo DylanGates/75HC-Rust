@@ -2,11 +2,12 @@ use std::fs::File;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 use clap::{Parser, ValueEnum};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use std::sync::Mutex;
+use std::collections::HashSet;
 
 #[derive(Parser)]
 #[command(name = "word_counter")]
@@ -29,6 +30,12 @@ struct Args {
 
     #[arg(short = 'x', long, num_args = 0..)]
     extensions: Vec<String>,
+
+    #[arg(short, long)]
+    config: Option<String>,
+
+    #[arg(long)]
+    delimiters: Option<String>,
 }
 
 #[derive(Clone, ValueEnum, PartialEq)]
@@ -36,6 +43,19 @@ enum OutputFormat {
     Text,
     Json,
     Csv,
+}
+
+impl std::str::FromStr for OutputFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "text" => Ok(OutputFormat::Text),
+            "json" => Ok(OutputFormat::Json),
+            "csv" => Ok(OutputFormat::Csv),
+            _ => Err(format!("Unknown format: {}", s)),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -52,6 +72,14 @@ struct Summary {
     average_chars_per_line: f64,
 }
 
+#[derive(Deserialize)]
+struct Config {
+    default_format: Option<String>,
+    custom_delimiters: Option<String>,
+    exclude_patterns: Option<Vec<String>>,
+    include_patterns: Option<Vec<String>>,
+}
+
 struct FileProcessingResult {
     results: Vec<LineResult>,
     chars: usize,
@@ -66,25 +94,54 @@ where
     Ok(io::BufReader::new(file).lines())
 }
 
-fn collect_files(args: &Args) -> Vec<String> {
+fn collect_files(args: &Args, exclude_patterns: &HashSet<String>, include_patterns: &HashSet<String>) -> Vec<String> {
     let mut files = Vec::new();
-    let extensions: std::collections::HashSet<String> = args.extensions.iter().cloned().collect();
+    let extensions: HashSet<String> = args.extensions.iter().cloned().collect();
 
     for input in &args.input {
         let path = Path::new(input);
         if path.is_file() {
-            if extensions.is_empty() || has_valid_extension(path, &extensions) {
+            if should_include_file(path, &extensions, exclude_patterns, include_patterns) {
                 files.push(input.clone());
             }
         } else if path.is_dir() && args.recursive {
             for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
-                if entry.file_type().is_file() && (extensions.is_empty() || has_valid_extension(entry.path(), &extensions)) {
+                if entry.file_type().is_file() && should_include_file(entry.path(), &extensions, exclude_patterns, include_patterns) {
                     files.push(entry.path().to_string_lossy().to_string());
                 }
             }
         }
     }
     files
+}
+
+fn should_include_file(path: &Path, extensions: &HashSet<String>, exclude_patterns: &HashSet<String>, include_patterns: &HashSet<String>) -> bool {
+
+    if !extensions.is_empty() && !has_valid_extension(path, extensions) {
+        return false;
+    }
+
+    let path_str = path.to_string_lossy();
+    for pattern in exclude_patterns {
+        if path_str.contains(pattern) {
+            return false;
+        }
+    }
+
+    if !include_patterns.is_empty() {
+        let mut included = false;
+        for pattern in include_patterns {
+            if path_str.contains(pattern) {
+                included = true;
+                break;
+            }
+        }
+        if !included {
+            return false;
+        }
+    }
+
+    true
 }
 
 fn has_valid_extension(path: &Path, extensions: &std::collections::HashSet<String>) -> bool {
@@ -94,7 +151,7 @@ fn has_valid_extension(path: &Path, extensions: &std::collections::HashSet<Strin
         .unwrap_or(false)
 }
 
-fn process_file(filename: &str, args: &Args) -> FileProcessingResult {
+fn process_file(filename: &str, args: &Args, delimiters: &str) -> FileProcessingResult {
     let mut file_results = Vec::new();
     let mut file_chars = 0;
     let mut file_lines = 0;
@@ -104,7 +161,7 @@ fn process_file(filename: &str, args: &Args) -> FileProcessingResult {
             for (line_number, line) in lines.enumerate() {
                 match line {
                     Ok(content) => {
-                        let char_count = content.chars().filter(|c| !c.is_whitespace()).count();
+                        let char_count = content.chars().filter(|c| !delimiters.contains(*c)).count();
                         file_chars += char_count;
                         file_lines += 1;
 
@@ -133,8 +190,52 @@ fn process_file(filename: &str, args: &Args) -> FileProcessingResult {
 }
 
 fn main() {
-    let args = Args::parse();
-    let files = collect_files(&args);
+    let mut args = Args::parse();
+
+    // Load config if specified
+    let config = if let Some(config_path) = &args.config {
+        match std::fs::read_to_string(config_path) {
+            Ok(content) => match toml::from_str::<Config>(&content) {
+                Ok(cfg) => {
+                    // Apply config defaults
+                    if let Some(fmt) = &cfg.default_format {
+                        if let Ok(f) = fmt.parse::<OutputFormat>() {
+                            args.format = f;
+                        }
+                    }
+                    Some(cfg)
+                }
+                Err(e) => {
+                    eprintln!("Error parsing config file: {}", e);
+                    None
+                }
+            },
+            Err(e) => {
+                eprintln!("Error reading config file: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Determine delimiters
+    let delimiters = args.delimiters.clone()
+        .or_else(|| config.as_ref().and_then(|c| c.custom_delimiters.clone()))
+        .unwrap_or_else(|| " \t\n\r".to_string());
+
+    // Determine patterns
+    let exclude_patterns: HashSet<String> = config.as_ref()
+        .and_then(|c| c.exclude_patterns.as_ref())
+        .map(|p| p.iter().cloned().collect())
+        .unwrap_or_default();
+
+    let include_patterns: HashSet<String> = config.as_ref()
+        .and_then(|c| c.include_patterns.as_ref())
+        .map(|p| p.iter().cloned().collect())
+        .unwrap_or_default();
+
+    let files = collect_files(&args, &exclude_patterns, &include_patterns);
 
     if files.is_empty() {
         eprintln!("No valid files found to process.");
@@ -154,7 +255,7 @@ fn main() {
     let file_results: Vec<FileProcessingResult> = files
         .par_iter()
         .map(|filename| {
-            let result = process_file(filename, &args);
+            let result = process_file(filename, &args, &delimiters);
             {
                 let pb = pb_mutex.lock().unwrap();
                 pb.inc(1);

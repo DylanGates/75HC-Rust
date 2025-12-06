@@ -1,0 +1,4 @@
+default_format = "json"
+custom_delimiters = " \t\n\r.,;:!?"
+exclude_patterns = ["test"]
+include_patterns = ["input", "test2"]
