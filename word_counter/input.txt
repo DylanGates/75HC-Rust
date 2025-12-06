@@ -1,1 +1,6 @@
-card
+card happy
+man
+friend
+girl
+gym
+word

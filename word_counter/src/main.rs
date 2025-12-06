@@ -1,10 +1,14 @@
-use std::fs;
-use std::io;
+use std::fs::File;
+use std::io::{self, BufRead};
+use std::path::Path;
 use std::fs::OpenOptions;
 
-fn read_file_lines(filename: &str) -> Result<Vec<String>, io::Error> {
-    let content = fs::read_to_string(filename)?;
-    Ok(content.lines().map(|line| line.to_string()).collect())
+fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
+where
+    P: AsRef<Path>,
+{
+    let file = File::open(filename)?;
+    Ok(io::BufReader::new(file).lines())
 }
 
 fn main() {
@@ -12,7 +16,7 @@ fn main() {
 
     let _file = OpenOptions::new()
         .write(true)
-        .create_new(true)
+        .create(true)
         .open(filename)
         .expect("Failed to open file");
 
@@ -23,10 +27,16 @@ fn main() {
         return;
     }
 
-    match read_file_lines(filename) {
+    match read_lines(filename) {
         Ok(lines) => {
-            for line in lines.iter() {
-                println!("{}", line);
+            for line in lines {
+                match line {
+                    Ok(content) => {
+                        let word_count = content.split_whitespace().count();
+                        println!("Line: {} - Word count: {}", content, word_count);
+                    }
+                    Err(e) => eprintln!("Error reading line: {}", e),
+                }
             }
         }
         Err(e) => eprintln!("Error reading file: {}", e),
