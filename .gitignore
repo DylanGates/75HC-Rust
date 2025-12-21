@@ -1,0 +1,58 @@
+# Rust build artifacts
+target/
+Cargo.lock
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Environment variables
+.env
+.env.local
+
+# Backup files
+*.bak
+*.backup
+*.tmp
+
+# Rust-specific
+rustc-ice-*.txt
+perf.data
+perf.data.old
+
+# Cargo target directory (already covered by target/ above)
+# target/
+
+# Cargo.lock is typically not committed for libraries
+# Uncomment the line above if this is an application, not a library
+
+# Test coverage
+*.profraw
+coverage/
+
+# Benchmark results
+criterion/
+
+# Development files
+debug/
+release/
+
+# Temporary files
+*.tmp
+*.temp
