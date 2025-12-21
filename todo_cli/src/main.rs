@@ -1,3 +1,4 @@
+use std::fs;
 use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader};
@@ -25,6 +26,17 @@ fn todo_command(command: Command, task: Option<String>, priority: Option<TaskPri
                     Some(TaskPriority::High) => "High",
                     None => "Medium",
                 };
+
+                let mut file = fs::OpenOptions::new()
+                    .append(true)
+                    .open("todo.txt")
+                    .expect("Could not open todo.txt");
+
+                use std::io::Write;
+
+                writeln!(file, "[{}] {}", task_priority, task_desc)
+                    .expect("Could not write to todo.txt");
+
                 println!(
                     "Added task: '{}' with priority: {}",
                     task_desc, task_priority
@@ -65,6 +77,11 @@ fn todo_command(command: Command, task: Option<String>, priority: Option<TaskPri
 
 fn main() {
     println!("Welcome to the Todo CLI!");
+
+    let filename = "todo.txt";
+    if !fs::metadata(filename).is_ok() {
+        fs::File::create(filename).expect("Could not create todo.txt");
+    }
 
     loop {
         println!("Please enter a command (add, list, scheduled, complete) or 'exit' to quit:");
