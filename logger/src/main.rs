@@ -58,7 +58,7 @@ fn log_message(level: LogLevel, message: &str) {
     writeln!(file, "{}", log_json).expect("Failed to write log entry");
 }
 
-fn read_logs() {
+fn read_logs_filtered(level_filter: Option<LogLevel>) {
     let mut file = match File::open(LOG_FILE_PATH) {
         Ok(file) => file,
         Err(_) => {
@@ -83,6 +83,13 @@ fn read_logs() {
         let log_entry: LogEntry =
             serde_json::from_str(line).expect("Failed to deserialize log entry");
         
+        // Filter by level if specified
+        if let Some(filter_level) = level_filter {
+            if std::mem::discriminant(&log_entry.level) != std::mem::discriminant(&filter_level) {
+                continue;
+            }
+        }
+        
         let level_str = match log_entry.level {
             LogLevel::INFO => "INFO".green(),
             LogLevel::WARN => "WARN".yellow(),
@@ -103,12 +110,16 @@ fn main() {
 
     println!(
         "
-    1. Read Logs
-    2. Write INFO Log
-    3. Write WARN Log
-    4. Write ERROR Log
-    5. Write DEBUG Log
-    6. Exit"
+    1. Read All Logs
+    2. Read INFO Logs
+    3. Read WARN Logs
+    4. Read ERROR Logs
+    5. Read DEBUG Logs
+    6. Write INFO Log
+    7. Write WARN Log
+    8. Write ERROR Log
+    9. Write DEBUG Log
+    10. Exit"
     );
 
     loop {
@@ -120,9 +131,21 @@ fn main() {
 
         match choice {
             "1" => {
-                read_logs();
+                read_logs_filtered(None);
             }
             "2" => {
+                read_logs_filtered(Some(LogLevel::INFO));
+            }
+            "3" => {
+                read_logs_filtered(Some(LogLevel::WARN));
+            }
+            "4" => {
+                read_logs_filtered(Some(LogLevel::ERROR));
+            }
+            "5" => {
+                read_logs_filtered(Some(LogLevel::DEBUG));
+            }
+            "6" => {
                 println!("Enter INFO log message:");
                 let mut message = String::new();
                 io::stdin()
@@ -131,7 +154,7 @@ fn main() {
                 log_message(LogLevel::INFO, message.trim());
                 println!("INFO log written.");
             }
-            "3" => {
+            "7" => {
                 println!("Enter WARN log message:");
                 let mut message = String::new();
                 io::stdin()
@@ -140,7 +163,7 @@ fn main() {
                 log_message(LogLevel::WARN, message.trim());
                 println!("WARN log written.");
             }
-            "4" => {
+            "8" => {
                 println!("Enter ERROR log message:");
                 let mut message = String::new();
                 io::stdin()
@@ -149,7 +172,7 @@ fn main() {
                 log_message(LogLevel::ERROR, message.trim());
                 println!("ERROR log written.");
             }
-            "5" => {
+            "9" => {
                 println!("Enter DEBUG log message:");
                 let mut message = String::new();
                 io::stdin()
@@ -158,7 +181,7 @@ fn main() {
                 log_message(LogLevel::DEBUG, message.trim());
                 println!("DEBUG log written.");
             }
-            "6" => {
+            "10" => {
                 println!("Exiting...");
                 break;
             }
@@ -168,6 +191,6 @@ fn main() {
         }
 
         println!("\nPlease select an option:");
-        println!("1. Read Logs\n2. Write INFO Log\n3. Write WARN Log\n4. Write ERROR Log\n5. Write DEBUG Log\n6. Exit");
+        println!("1. Read All Logs\n2. Read INFO Logs\n3. Read WARN Logs\n4. Read ERROR Logs\n5. Read DEBUG Logs\n6. Write INFO Log\n7. Write WARN Log\n8. Write ERROR Log\n9. Write DEBUG Log\n10. Exit");
     }
 }
