@@ -6,6 +6,7 @@ use std::io::{Read, Write};
 use chrono::{DateTime, Utc};
 use colored::*;
 use clap::{Parser, Subcommand};
+use std::time::Instant;
 
 #[derive(Parser)]
 #[command(name = "logger")]
@@ -186,7 +187,57 @@ fn log_message(level: LogLevel, message: &str) {
     writeln!(file, "{}", log_json).expect("Failed to write log entry");
 }
 
-fn archive_old_logs(days: i64) -> io::Result<()> {
+fn show_performance_metrics() {
+    let start = Instant::now();
+    
+    let file_size = match fs::metadata(LOG_FILE_PATH) {
+        Ok(metadata) => metadata.len(),
+        Err(_) => 0,
+    };
+    
+    let mut file = match File::open(LOG_FILE_PATH) {
+        Ok(file) => file,
+        Err(_) => {
+            println!("No log file found for performance analysis.");
+            return;
+        }
+    };
+
+    let mut contents = String::new();
+    let read_start = Instant::now();
+    file.read_to_string(&mut contents)
+        .expect("Failed to read log file");
+    let read_duration = read_start.elapsed();
+
+    let line_count = contents.lines().count();
+    let parse_start = Instant::now();
+    let mut valid_entries = 0;
+    
+    for line in contents.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if serde_json::from_str::<LogEntry>(line).is_ok() {
+            valid_entries += 1;
+        }
+    }
+    
+    let parse_duration = parse_start.elapsed();
+    let total_duration = start.elapsed();
+
+    println!("🚀 Performance Metrics:");
+    println!("File size: {} bytes ({:.2} KB)", file_size, file_size as f64 / 1024.0);
+    println!("Total lines: {}", line_count);
+    println!("Valid log entries: {}", valid_entries);
+    println!("Read time: {:.2}ms", read_duration.as_millis());
+    println!("Parse time: {:.2}ms", parse_duration.as_millis());
+    println!("Total analysis time: {:.2}ms", total_duration.as_millis());
+    
+    if valid_entries > 0 {
+        let avg_parse_time = parse_duration.as_millis() as f64 / valid_entries as f64;
+        println!("Average parse time per entry: {:.3}ms", avg_parse_time);
+    }
+}
     let cutoff_date = Utc::now() - chrono::Duration::days(days);
     
     let mut file = match File::open(LOG_FILE_PATH) {
