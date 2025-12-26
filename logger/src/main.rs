@@ -7,6 +7,8 @@ use chrono::{DateTime, Utc};
 use colored::*;
 use clap::{Parser, Subcommand};
 use std::time::Instant;
+use std::thread;
+use std::sync::mpsc;
 
 #[derive(Parser)]
 #[command(name = "logger")]
@@ -187,7 +189,72 @@ fn log_message(level: LogLevel, message: &str) {
     writeln!(file, "{}", log_json).expect("Failed to write log entry");
 }
 
-fn show_performance_metrics() {
+fn process_logs_parallel() -> io::Result<()> {
+    let mut file = File::open(LOG_FILE_PATH)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    
+    if contents.trim().is_empty() {
+        println!("No logs to process.");
+        return Ok(());
+    }
+
+    let lines: Vec<String> = contents.lines().map(|s| s.to_string()).collect();
+    let num_threads = num_cpus::get().min(lines.len());
+    
+    println!("Processing {} log lines with {} threads...", lines.len(), num_threads);
+    
+    let (tx, rx) = mpsc::channel();
+    let chunk_size = (lines.len() + num_threads - 1) / num_threads;
+    
+    let mut handles = vec![];
+    
+    for (i, chunk) in lines.chunks(chunk_size).enumerate() {
+        let tx_clone = tx.clone();
+        let chunk_vec = chunk.to_vec();
+        
+        let handle = thread::spawn(move || {
+            let mut processed = 0;
+            let mut errors = 0;
+            
+            for line in chunk_vec {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                
+                match serde_json::from_str::<LogEntry>(&line) {
+                    Ok(_) => processed += 1,
+                    Err(_) => errors += 1,
+                }
+            }
+            
+            tx_clone.send((i, processed, errors)).unwrap();
+        });
+        
+        handles.push(handle);
+    }
+    
+    // Close the original sender
+    drop(tx);
+    
+    let mut total_processed = 0;
+    let mut total_errors = 0;
+    
+    for _ in 0..handles.len() {
+        let (thread_id, processed, errors) = rx.recv().unwrap();
+        println!("Thread {}: {} valid logs, {} errors", thread_id, processed, errors);
+        total_processed += processed;
+        total_errors += errors;
+    }
+    
+    // Wait for all threads to complete
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    
+    println!("Parallel processing complete: {} valid logs, {} errors", total_processed, total_errors);
+    Ok(())
+}
     let start = Instant::now();
     
     let file_size = match fs::metadata(LOG_FILE_PATH) {
