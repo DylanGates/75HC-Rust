@@ -9,6 +9,7 @@ use clap::{Parser, Subcommand};
 use std::time::Instant;
 use std::thread;
 use std::sync::mpsc;
+use tiny_http::{Server, Response};
 
 #[derive(Parser)]
 #[command(name = "logger")]
@@ -189,7 +190,181 @@ fn log_message(level: LogLevel, message: &str) {
     writeln!(file, "{}", log_json).expect("Failed to write log entry");
 }
 
-fn process_logs_parallel() -> io::Result<()> {
+fn start_web_server(port: u16) -> io::Result<()> {
+    let server = Server::http(format!("127.0.0.1:{}", port))
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    
+    println!("🌐 Web interface started at http://127.0.0.1:{}", port);
+    println!("Press Ctrl+C to stop the server");
+    
+    for request in server.incoming_requests() {
+        match request.url() {
+            "/" => {
+                let html = generate_html_page();
+                let response = Response::from_string(html)
+                    .with_header(tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html"[..]).unwrap());
+                request.respond(response)?;
+            }
+            "/api/logs" => {
+                let logs = get_logs_as_json();
+                let response = Response::from_string(logs)
+                    .with_header(tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
+                request.respond(response)?;
+            }
+            "/api/stats" => {
+                let stats = get_stats_as_json();
+                let response = Response::from_string(stats)
+                    .with_header(tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
+                request.respond(response)?;
+            }
+            _ => {
+                let response = Response::from_string("404 Not Found").with_status_code(404);
+                request.respond(response)?;
+            }
+        }
+    }
+    
+    Ok(())
+}
+
+fn generate_html_page() -> String {
+    format!(r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>Logger Web Interface</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; }}
+        .log-entry {{ margin: 5px 0; padding: 5px; border-left: 3px solid; }}
+        .INFO {{ border-left-color: green; }}
+        .WARN {{ border-left-color: orange; }}
+        .ERROR {{ border-left-color: red; }}
+        .DEBUG {{ border-left-color: blue; }}
+        button {{ margin: 5px; padding: 10px; }}
+    </style>
+</head>
+<body>
+    <h1>📝 Logger Web Interface</h1>
+    
+    <div>
+        <button onclick="loadLogs()">Load All Logs</button>
+        <button onclick="loadStats()">Load Statistics</button>
+        <button onclick="clearLogs()">Clear Display</button>
+    </div>
+    
+    <h2>Statistics</h2>
+    <div id="stats"></div>
+    
+    <h2>Logs</h2>
+    <div id="logs"></div>
+    
+    <script>
+        async function loadLogs() {{
+            const response = await fetch('/api/logs');
+            const logs = await response.json();
+            displayLogs(logs);
+        }}
+        
+        async function loadStats() {{
+            const response = await fetch('/api/stats');
+            const stats = await response.json();
+            displayStats(stats);
+        }}
+        
+        function displayLogs(logs) {{
+            const container = document.getElementById('logs');
+            container.innerHTML = '';
+            logs.forEach(log => {{
+                const div = document.createElement('div');
+                div.className = `log-entry ${{log.level}}`;
+                div.textContent = `[${{log.timestamp}}] [${{log.level}}] ${{log.message}}`;
+                container.appendChild(div);
+            }});
+        }}
+        
+        function displayStats(stats) {{
+            const container = document.getElementById('stats');
+            container.innerHTML = `<pre>${{JSON.stringify(stats, null, 2)}}</pre>`;
+        }}
+        
+        function clearLogs() {{
+            document.getElementById('logs').innerHTML = '';
+            document.getElementById('stats').innerHTML = '';
+        }}
+        
+        // Load logs on page load
+        loadLogs();
+        loadStats();
+    </script>
+</body>
+</html>"#)
+}
+
+fn get_logs_as_json() -> String {
+    let mut file = match File::open(LOG_FILE_PATH) {
+        Ok(file) => file,
+        Err(_) => return "[]".to_string(),
+    };
+
+    let mut contents = String::new();
+    if file.read_to_string(&mut contents).is_err() {
+        return "[]".to_string();
+    }
+
+    let mut logs = Vec::new();
+    for line in contents.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if let Ok(log_entry) = serde_json::from_str::<LogEntry>(line) {
+            logs.push(log_entry);
+        }
+    }
+
+    serde_json::to_string(&logs).unwrap_or_else(|_| "[]".to_string())
+}
+
+fn get_stats_as_json() -> String {
+    let mut file = match File::open(LOG_FILE_PATH) {
+        Ok(file) => file,
+        Err(_) => return "{}".to_string(),
+    };
+
+    let mut contents = String::new();
+    if file.read_to_string(&mut contents).is_err() {
+        return "{}".to_string();
+    }
+
+    let mut total_logs = 0;
+    let mut info_count = 0;
+    let mut warn_count = 0;
+    let mut error_count = 0;
+    let mut debug_count = 0;
+
+    for line in contents.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if let Ok(log_entry) = serde_json::from_str::<LogEntry>(line) {
+            total_logs += 1;
+            match log_entry.level {
+                LogLevel::INFO => info_count += 1,
+                LogLevel::WARN => warn_count += 1,
+                LogLevel::ERROR => error_count += 1,
+                LogLevel::DEBUG => debug_count += 1,
+            }
+        }
+    }
+
+    let stats = serde_json::json!({
+        "total_logs": total_logs,
+        "info_count": info_count,
+        "warn_count": warn_count,
+        "error_count": error_count,
+        "debug_count": debug_count
+    });
+
+    serde_json::to_string(&stats).unwrap_or_else(|_| "{}".to_string())
+}
     let mut file = File::open(LOG_FILE_PATH)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
