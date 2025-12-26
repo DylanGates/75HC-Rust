@@ -3,6 +3,7 @@ use serde_json;
 use std::fs::File;
 use std::io;
 use std::io::{Read, Write};
+use chrono::{DateTime, Utc};
 
 enum Logger {
     Write,
@@ -10,12 +11,14 @@ enum Logger {
 
 #[derive(Serialize, Deserialize)]
 struct LogEntry {
+    timestamp: DateTime<Utc>,
     mode: String,
     message: String,
 }
 
 fn log_message(mode: Logger, message: &str) {
     let log_entry = LogEntry {
+        timestamp: Utc::now(),
         mode: match mode {
             Logger::Write => "WRITE".to_string(),
         },
@@ -57,7 +60,7 @@ fn read_logs() {
         }
         let log_entry: LogEntry =
             serde_json::from_str(line).expect("Failed to deserialize log entry");
-        println!("[{}] {}", log_entry.mode, log_entry.message);
+        println!("[{}] [{}] {}", log_entry.timestamp.format("%Y-%m-%d %H:%M:%S"), log_entry.mode, log_entry.message);
     }
 }
 
