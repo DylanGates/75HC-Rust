@@ -4,6 +4,7 @@ use std::fs::{self, File};
 use std::io;
 use std::io::{Read, Write};
 use chrono::{DateTime, Utc};
+use colored::*;
 
 const LOG_FILE_PATH: &str = "log.json";
 const MAX_LOG_SIZE: u64 = 1024 * 1024; // 1MB
@@ -81,7 +82,19 @@ fn read_logs() {
         }
         let log_entry: LogEntry =
             serde_json::from_str(line).expect("Failed to deserialize log entry");
-        println!("[{}] [{:?}] {}", log_entry.timestamp.format("%Y-%m-%d %H:%M:%S"), log_entry.level, log_entry.message);
+        
+        let level_str = match log_entry.level {
+            LogLevel::INFO => "INFO".green(),
+            LogLevel::WARN => "WARN".yellow(),
+            LogLevel::ERROR => "ERROR".red(),
+            LogLevel::DEBUG => "DEBUG".blue(),
+        };
+        
+        println!("[{}] [{}] {}", 
+            log_entry.timestamp.format("%Y-%m-%d %H:%M:%S").dimmed(),
+            level_str,
+            log_entry.message
+        );
     }
 }
 
