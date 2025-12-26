@@ -1,11 +1,24 @@
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io;
 use std::io::{Read, Write};
 use chrono::{DateTime, Utc};
 
 const LOG_FILE_PATH: &str = "log.json";
+const MAX_LOG_SIZE: u64 = 1024 * 1024; // 1MB
+
+fn rotate_log_if_needed() -> io::Result<()> {
+    if let Ok(metadata) = fs::metadata(LOG_FILE_PATH) {
+        if metadata.len() > MAX_LOG_SIZE {
+            let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
+            let backup_path = format!("log_backup_{}.json", timestamp);
+            fs::rename(LOG_FILE_PATH, backup_path)?;
+            println!("Log file rotated to: {}", backup_path);
+        }
+    }
+    Ok(())
+}
 
 #[derive(Serialize, Deserialize)]
 enum LogLevel {
@@ -23,6 +36,10 @@ struct LogEntry {
 }
 
 fn log_message(level: LogLevel, message: &str) {
+    if let Err(e) = rotate_log_if_needed() {
+        eprintln!("Failed to rotate log: {}", e);
+    }
+
     let log_entry = LogEntry {
         timestamp: Utc::now(),
         level,
