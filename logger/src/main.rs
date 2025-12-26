@@ -58,7 +58,53 @@ fn log_message(level: LogLevel, message: &str) {
     writeln!(file, "{}", log_json).expect("Failed to write log entry");
 }
 
-fn read_logs_filtered(level_filter: Option<LogLevel>) {
+fn search_logs(keyword: &str) {
+    let mut file = match File::open(LOG_FILE_PATH) {
+        Ok(file) => file,
+        Err(_) => {
+            println!("No log file found. No logs to search.");
+            return;
+        }
+    };
+
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .expect("Failed to read log file");
+
+    if contents.trim().is_empty() {
+        println!("Log file is empty.");
+        return;
+    }
+
+    let mut found = false;
+    for line in contents.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let log_entry: LogEntry =
+            serde_json::from_str(line).expect("Failed to deserialize log entry");
+        
+        if log_entry.message.to_lowercase().contains(&keyword.to_lowercase()) {
+            let level_str = match log_entry.level {
+                LogLevel::INFO => "INFO".green(),
+                LogLevel::WARN => "WARN".yellow(),
+                LogLevel::ERROR => "ERROR".red(),
+                LogLevel::DEBUG => "DEBUG".blue(),
+            };
+            
+            println!("[{}] [{}] {}", 
+                log_entry.timestamp.format("%Y-%m-%d %H:%M:%S").dimmed(),
+                level_str,
+                log_entry.message
+            );
+            found = true;
+        }
+    }
+    
+    if !found {
+        println!("No logs found containing: {}", keyword);
+    }
+}
     let mut file = match File::open(LOG_FILE_PATH) {
         Ok(file) => file,
         Err(_) => {
@@ -115,11 +161,12 @@ fn main() {
     3. Read WARN Logs
     4. Read ERROR Logs
     5. Read DEBUG Logs
-    6. Write INFO Log
-    7. Write WARN Log
-    8. Write ERROR Log
-    9. Write DEBUG Log
-    10. Exit"
+    6. Search Logs
+    7. Write INFO Log
+    8. Write WARN Log
+    9. Write ERROR Log
+    10. Write DEBUG Log
+    11. Exit"
     );
 
     loop {
@@ -146,6 +193,14 @@ fn main() {
                 read_logs_filtered(Some(LogLevel::DEBUG));
             }
             "6" => {
+                println!("Enter search keyword:");
+                let mut keyword = String::new();
+                io::stdin()
+                    .read_line(&mut keyword)
+                    .expect("Failed to read line");
+                search_logs(keyword.trim());
+            }
+            "7" => {
                 println!("Enter INFO log message:");
                 let mut message = String::new();
                 io::stdin()
@@ -154,7 +209,7 @@ fn main() {
                 log_message(LogLevel::INFO, message.trim());
                 println!("INFO log written.");
             }
-            "7" => {
+            "8" => {
                 println!("Enter WARN log message:");
                 let mut message = String::new();
                 io::stdin()
@@ -163,7 +218,7 @@ fn main() {
                 log_message(LogLevel::WARN, message.trim());
                 println!("WARN log written.");
             }
-            "8" => {
+            "9" => {
                 println!("Enter ERROR log message:");
                 let mut message = String::new();
                 io::stdin()
@@ -172,7 +227,7 @@ fn main() {
                 log_message(LogLevel::ERROR, message.trim());
                 println!("ERROR log written.");
             }
-            "9" => {
+            "10" => {
                 println!("Enter DEBUG log message:");
                 let mut message = String::new();
                 io::stdin()
@@ -181,7 +236,7 @@ fn main() {
                 log_message(LogLevel::DEBUG, message.trim());
                 println!("DEBUG log written.");
             }
-            "10" => {
+            "11" => {
                 println!("Exiting...");
                 break;
             }
@@ -191,6 +246,6 @@ fn main() {
         }
 
         println!("\nPlease select an option:");
-        println!("1. Read All Logs\n2. Read INFO Logs\n3. Read WARN Logs\n4. Read ERROR Logs\n5. Read DEBUG Logs\n6. Write INFO Log\n7. Write WARN Log\n8. Write ERROR Log\n9. Write DEBUG Log\n10. Exit");
+        println!("1. Read All Logs\n2. Read INFO Logs\n3. Read WARN Logs\n4. Read ERROR Logs\n5. Read DEBUG Logs\n6. Search Logs\n7. Write INFO Log\n8. Write WARN Log\n9. Write ERROR Log\n10. Write DEBUG Log\n11. Exit");
     }
 }
