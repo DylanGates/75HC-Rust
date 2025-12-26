@@ -58,7 +58,77 @@ fn log_message(level: LogLevel, message: &str) {
     writeln!(file, "{}", log_json).expect("Failed to write log entry");
 }
 
-fn show_log_statistics() {
+fn export_logs(format: &str) -> io::Result<()> {
+    let mut file = File::open(LOG_FILE_PATH)?;
+    
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    
+    if contents.trim().is_empty() {
+        println!("No logs to export.");
+        return Ok(());
+    }
+
+    let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
+    let export_filename = format!("logs_export_{}.{}", timestamp, format);
+    
+    let mut export_file = File::create(&export_filename)?;
+    
+    match format {
+        "csv" => {
+            writeln!(export_file, "timestamp,level,message")?;
+            for line in contents.lines() {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let log_entry: LogEntry = serde_json::from_str(line)
+                    .expect("Failed to deserialize log entry");
+                
+                let level_str = match log_entry.level {
+                    LogLevel::INFO => "INFO",
+                    LogLevel::WARN => "WARN", 
+                    LogLevel::ERROR => "ERROR",
+                    LogLevel::DEBUG => "DEBUG",
+                };
+                
+                writeln!(export_file, "{},{},{}",
+                    log_entry.timestamp.format("%Y-%m-%d %H:%M:%S"),
+                    level_str,
+                    log_entry.message.replace(",", ";") // Escape commas
+                )?;
+            }
+        }
+        "txt" => {
+            for line in contents.lines() {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let log_entry: LogEntry = serde_json::from_str(line)
+                    .expect("Failed to deserialize log entry");
+                
+                let level_str = match log_entry.level {
+                    LogLevel::INFO => "INFO",
+                    LogLevel::WARN => "WARN",
+                    LogLevel::ERROR => "ERROR", 
+                    LogLevel::DEBUG => "DEBUG",
+                };
+                
+                writeln!(export_file, "[{}] [{}] {}",
+                    log_entry.timestamp.format("%Y-%m-%d %H:%M:%S"),
+                    level_str,
+                    log_entry.message
+                )?;
+            }
+        }
+        _ => {
+            println!("Unsupported export format: {}", format);
+            return Ok(());
+        }
+    }
+    
+    println!("Logs exported to: {}", export_filename);
+    Ok(())
+}
     let mut file = match File::open(LOG_FILE_PATH) {
         Ok(file) => file,
         Err(_) => {
@@ -226,11 +296,13 @@ fn main() {
     5. Read DEBUG Logs
     6. Search Logs
     7. Show Statistics
-    8. Write INFO Log
-    9. Write WARN Log
-    10. Write ERROR Log
-    11. Write DEBUG Log
-    12. Exit"
+    8. Export to CSV
+    9. Export to TXT
+    10. Write INFO Log
+    11. Write WARN Log
+    12. Write ERROR Log
+    13. Write DEBUG Log
+    14. Exit"
     );
 
     loop {
@@ -268,13 +340,14 @@ fn main() {
                 show_log_statistics();
             }
             "8" => {
-                println!("Enter INFO log message:");
-                let mut message = String::new();
-                io::stdin()
-                    .read_line(&mut message)
-                    .expect("Failed to read line");
-                log_message(LogLevel::INFO, message.trim());
-                println!("INFO log written.");
+                if let Err(e) = export_logs("csv") {
+                    println!("Failed to export logs: {}", e);
+                }
+            }
+            "9" => {
+                if let Err(e) = export_logs("txt") {
+                    println!("Failed to export logs: {}", e);
+                }
             }
             "9" => {
                 println!("Enter ERROR log message:");
