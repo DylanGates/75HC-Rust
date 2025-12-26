@@ -5,6 +5,8 @@ use std::io;
 use std::io::{Read, Write};
 use chrono::{DateTime, Utc};
 
+const LOG_FILE_PATH: &str = "log.json";
+
 #[derive(Serialize, Deserialize)]
 enum LogLevel {
     INFO,
@@ -32,14 +34,14 @@ fn log_message(level: LogLevel, message: &str) {
     let mut file = File::options()
         .append(true)
         .create(true)
-        .open("log.json")
+        .open(LOG_FILE_PATH)
         .expect("Failed to open log file");
 
     writeln!(file, "{}", log_json).expect("Failed to write log entry");
 }
 
 fn read_logs() {
-    let mut file = match File::open("log.json") {
+    let mut file = match File::open(LOG_FILE_PATH) {
         Ok(file) => file,
         Err(_) => {
             println!("No log file found. No logs to display.");
