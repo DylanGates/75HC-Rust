@@ -5,23 +5,25 @@ use std::io;
 use std::io::{Read, Write};
 use chrono::{DateTime, Utc};
 
-enum Logger {
-    Write,
+#[derive(Serialize, Deserialize)]
+enum LogLevel {
+    INFO,
+    WARN,
+    ERROR,
+    DEBUG,
 }
 
 #[derive(Serialize, Deserialize)]
 struct LogEntry {
     timestamp: DateTime<Utc>,
-    mode: String,
+    level: LogLevel,
     message: String,
 }
 
-fn log_message(mode: Logger, message: &str) {
+fn log_message(level: LogLevel, message: &str) {
     let log_entry = LogEntry {
         timestamp: Utc::now(),
-        mode: match mode {
-            Logger::Write => "WRITE".to_string(),
-        },
+        level,
         message: message.to_string(),
     };
 
@@ -60,7 +62,7 @@ fn read_logs() {
         }
         let log_entry: LogEntry =
             serde_json::from_str(line).expect("Failed to deserialize log entry");
-        println!("[{}] [{}] {}", log_entry.timestamp.format("%Y-%m-%d %H:%M:%S"), log_entry.mode, log_entry.message);
+        println!("[{}] [{:?}] {}", log_entry.timestamp.format("%Y-%m-%d %H:%M:%S"), log_entry.level, log_entry.message);
     }
 }
 
@@ -70,8 +72,11 @@ fn main() {
     println!(
         "
     1. Read Logs
-    2. Write Log
-    3. Exit"
+    2. Write INFO Log
+    3. Write WARN Log
+    4. Write ERROR Log
+    5. Write DEBUG Log
+    6. Exit"
     );
 
     loop {
@@ -86,15 +91,42 @@ fn main() {
                 read_logs();
             }
             "2" => {
-                println!("Enter log message:");
+                println!("Enter INFO log message:");
                 let mut message = String::new();
                 io::stdin()
                     .read_line(&mut message)
                     .expect("Failed to read line");
-                log_message(Logger::Write, message.trim());
-                println!("Log written.");
+                log_message(LogLevel::INFO, message.trim());
+                println!("INFO log written.");
             }
             "3" => {
+                println!("Enter WARN log message:");
+                let mut message = String::new();
+                io::stdin()
+                    .read_line(&mut message)
+                    .expect("Failed to read line");
+                log_message(LogLevel::WARN, message.trim());
+                println!("WARN log written.");
+            }
+            "4" => {
+                println!("Enter ERROR log message:");
+                let mut message = String::new();
+                io::stdin()
+                    .read_line(&mut message)
+                    .expect("Failed to read line");
+                log_message(LogLevel::ERROR, message.trim());
+                println!("ERROR log written.");
+            }
+            "5" => {
+                println!("Enter DEBUG log message:");
+                let mut message = String::new();
+                io::stdin()
+                    .read_line(&mut message)
+                    .expect("Failed to read line");
+                log_message(LogLevel::DEBUG, message.trim());
+                println!("DEBUG log written.");
+            }
+            "6" => {
                 println!("Exiting...");
                 break;
             }
@@ -104,6 +136,6 @@ fn main() {
         }
 
         println!("\nPlease select an option:");
-        println!("1. Read Logs\n2. Write Log\n3. Exit");
+        println!("1. Read Logs\n2. Write INFO Log\n3. Write WARN Log\n4. Write ERROR Log\n5. Write DEBUG Log\n6. Exit");
     }
 }
