@@ -5,11 +5,139 @@ use std::io;
 use std::io::{Read, Write};
 use chrono::{DateTime, Utc};
 use colored::*;
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(name = "logger")]
+#[command(about = "A simple logging utility with timestamps")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Write a log message
+    Write {
+        /// Log level (info, warn, error, debug)
+        #[arg(short, long, default_value = "info")]
+        level: String,
+        /// Log message
+        message: String,
+    },
+    /// Read logs with optional filtering
+    Read {
+        /// Filter by log level
+        #[arg(short, long)]
+        level: Option<String>,
+        /// Search for keyword
+        #[arg(short, long)]
+        search: Option<String>,
+    },
+    /// Show log statistics
+    Stats,
+    /// Export logs to file
+    Export {
+        /// Export format (csv, txt)
+        #[arg(short, long, default_value = "csv")]
+        format: String,
+    },
+}
 
 const LOG_FILE_PATH: &str = "log.json";
 const MAX_LOG_SIZE: u64 = 1024 * 1024; // 1MB
 
-fn rotate_log_if_needed() -> io::Result<()> {
+#[derive(Parser)]
+#[command(name = "logger")]
+#[command(about = "A simple logging utility with timestamps")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Write a log message
+    Write {
+        /// Log level (info, warn, error, debug)
+        #[arg(short, long, default_value = "info")]
+        level: String,
+        /// Log message
+        message: String,
+    },
+    /// Read logs with optional filtering
+    Read {
+        /// Filter by log level
+        #[arg(short, long)]
+        level: Option<String>,
+        /// Search for keyword
+        #[arg(short, long)]
+        search: Option<String>,
+    },
+    /// Show log statistics
+    Stats,
+    /// Export logs to file
+    Export {
+        /// Export format (csv, txt)
+        #[arg(short, long, default_value = "csv")]
+        format: String,
+    },
+}
+
+fn main() {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Some(Commands::Write { level, message }) => {
+            let log_level = match level.to_lowercase().as_str() {
+                "info" => LogLevel::INFO,
+                "warn" => LogLevel::WARN,
+                "error" => LogLevel::ERROR,
+                "debug" => LogLevel::DEBUG,
+                _ => {
+                    eprintln!("Invalid log level: {}", level);
+                    std::process::exit(1);
+                }
+            };
+            log_message(log_level, &message);
+            println!("{} log written.", level.to_uppercase());
+        }
+        Some(Commands::Read { level, search }) => {
+            if let Some(keyword) = search {
+                search_logs(&keyword);
+            } else if let Some(level_str) = level {
+                let log_level = match level_str.to_lowercase().as_str() {
+                    "info" => Some(LogLevel::INFO),
+                    "warn" => Some(LogLevel::WARN),
+                    "error" => Some(LogLevel::ERROR),
+                    "debug" => Some(LogLevel::DEBUG),
+                    _ => {
+                        eprintln!("Invalid log level: {}", level_str);
+                        std::process::exit(1);
+                    }
+                };
+                read_logs_filtered(log_level);
+            } else {
+                read_logs_filtered(None);
+            }
+        }
+        Some(Commands::Stats) => {
+            show_log_statistics();
+        }
+        Some(Commands::Export { format }) => {
+            if let Err(e) = export_logs(&format) {
+                eprintln!("Failed to export logs: {}", e);
+                std::process::exit(1);
+            }
+        }
+        None => {
+            // Interactive mode
+            run_interactive_mode();
+        }
+    }
+}
+
+fn run_interactive_mode() {
     if let Ok(metadata) = fs::metadata(LOG_FILE_PATH) {
         if metadata.len() > MAX_LOG_SIZE {
             let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
