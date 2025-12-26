@@ -186,7 +186,65 @@ fn log_message(level: LogLevel, message: &str) {
     writeln!(file, "{}", log_json).expect("Failed to write log entry");
 }
 
-fn export_logs(format: &str) -> io::Result<()> {
+fn archive_old_logs(days: i64) -> io::Result<()> {
+    let cutoff_date = Utc::now() - chrono::Duration::days(days);
+    
+    let mut file = match File::open(LOG_FILE_PATH) {
+        Ok(file) => file,
+        Err(_) => {
+            println!("No log file found to archive.");
+            return Ok(());
+        }
+    };
+
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    
+    if contents.trim().is_empty() {
+        println!("Log file is empty.");
+        return Ok(());
+    }
+
+    let mut current_logs = Vec::new();
+    let mut archived_logs = Vec::new();
+
+    for line in contents.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let log_entry: LogEntry = serde_json::from_str(line)
+            .expect("Failed to deserialize log entry");
+        
+        if log_entry.timestamp < cutoff_date {
+            archived_logs.push(line.to_string());
+        } else {
+            current_logs.push(line.to_string());
+        }
+    }
+
+    if archived_logs.is_empty() {
+        println!("No logs older than {} days to archive.", days);
+        return Ok(());
+    }
+
+    // Create archive file
+    let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
+    let archive_filename = format!("logs_archive_{}.json", timestamp);
+    let mut archive_file = File::create(&archive_filename)?;
+    
+    for archived_log in &archived_logs {
+        writeln!(archive_file, "{}", archived_log)?;
+    }
+
+    // Rewrite current log file with only recent logs
+    let mut current_file = File::create(LOG_FILE_PATH)?;
+    for current_log in &current_logs {
+        writeln!(current_file, "{}", current_log)?;
+    }
+
+    println!("Archived {} old logs to: {}", archived_logs.len(), archive_filename);
+    Ok(())
+}
     let mut file = File::open(LOG_FILE_PATH)?;
     
     let mut contents = String::new();
