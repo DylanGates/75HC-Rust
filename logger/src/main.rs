@@ -58,7 +58,70 @@ fn log_message(level: LogLevel, message: &str) {
     writeln!(file, "{}", log_json).expect("Failed to write log entry");
 }
 
-fn search_logs(keyword: &str) {
+fn show_log_statistics() {
+    let mut file = match File::open(LOG_FILE_PATH) {
+        Ok(file) => file,
+        Err(_) => {
+            println!("No log file found. No statistics to show.");
+            return;
+        }
+    };
+
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .expect("Failed to read log file");
+
+    if contents.trim().is_empty() {
+        println!("Log file is empty.");
+        return;
+    }
+
+    let mut total_logs = 0;
+    let mut info_count = 0;
+    let mut warn_count = 0;
+    let mut error_count = 0;
+    let mut debug_count = 0;
+    let mut earliest_timestamp: Option<DateTime<Utc>> = None;
+    let mut latest_timestamp: Option<DateTime<Utc>> = None;
+
+    for line in contents.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let log_entry: LogEntry =
+            serde_json::from_str(line).expect("Failed to deserialize log entry");
+        
+        total_logs += 1;
+        
+        match log_entry.level {
+            LogLevel::INFO => info_count += 1,
+            LogLevel::WARN => warn_count += 1,
+            LogLevel::ERROR => error_count += 1,
+            LogLevel::DEBUG => debug_count += 1,
+        }
+        
+        if earliest_timestamp.is_none() || log_entry.timestamp < earliest_timestamp.unwrap() {
+            earliest_timestamp = Some(log_entry.timestamp);
+        }
+        if latest_timestamp.is_none() || log_entry.timestamp > latest_timestamp.unwrap() {
+            latest_timestamp = Some(log_entry.timestamp);
+        }
+    }
+
+    println!("📊 Log Statistics:");
+    println!("Total logs: {}", total_logs);
+    println!("INFO: {} ({:.1}%)", info_count, (info_count as f64 / total_logs as f64) * 100.0);
+    println!("WARN: {} ({:.1}%)", warn_count, (warn_count as f64 / total_logs as f64) * 100.0);
+    println!("ERROR: {} ({:.1}%)", error_count, (error_count as f64 / total_logs as f64) * 100.0);
+    println!("DEBUG: {} ({:.1}%)", debug_count, (debug_count as f64 / total_logs as f64) * 100.0);
+    
+    if let (Some(earliest), Some(latest)) = (earliest_timestamp, latest_timestamp) {
+        println!("Time range: {} to {}", 
+            earliest.format("%Y-%m-%d %H:%M:%S"),
+            latest.format("%Y-%m-%d %H:%M:%S")
+        );
+    }
+}
     let mut file = match File::open(LOG_FILE_PATH) {
         Ok(file) => file,
         Err(_) => {
@@ -162,11 +225,12 @@ fn main() {
     4. Read ERROR Logs
     5. Read DEBUG Logs
     6. Search Logs
-    7. Write INFO Log
-    8. Write WARN Log
-    9. Write ERROR Log
-    10. Write DEBUG Log
-    11. Exit"
+    7. Show Statistics
+    8. Write INFO Log
+    9. Write WARN Log
+    10. Write ERROR Log
+    11. Write DEBUG Log
+    12. Exit"
     );
 
     loop {
@@ -201,6 +265,9 @@ fn main() {
                 search_logs(keyword.trim());
             }
             "7" => {
+                show_log_statistics();
+            }
+            "8" => {
                 println!("Enter INFO log message:");
                 let mut message = String::new();
                 io::stdin()
@@ -208,15 +275,6 @@ fn main() {
                     .expect("Failed to read line");
                 log_message(LogLevel::INFO, message.trim());
                 println!("INFO log written.");
-            }
-            "8" => {
-                println!("Enter WARN log message:");
-                let mut message = String::new();
-                io::stdin()
-                    .read_line(&mut message)
-                    .expect("Failed to read line");
-                log_message(LogLevel::WARN, message.trim());
-                println!("WARN log written.");
             }
             "9" => {
                 println!("Enter ERROR log message:");
@@ -246,6 +304,6 @@ fn main() {
         }
 
         println!("\nPlease select an option:");
-        println!("1. Read All Logs\n2. Read INFO Logs\n3. Read WARN Logs\n4. Read ERROR Logs\n5. Read DEBUG Logs\n6. Search Logs\n7. Write INFO Log\n8. Write WARN Log\n9. Write ERROR Log\n10. Write DEBUG Log\n11. Exit");
+        println!("1. Read All Logs\n2. Read INFO Logs\n3. Read WARN Logs\n4. Read ERROR Logs\n5. Read DEBUG Logs\n6. Search Logs\n7. Show Statistics\n8. Write INFO Log\n9. Write WARN Log\n10. Write ERROR Log\n11. Write DEBUG Log\n12. Exit");
     }
 }
