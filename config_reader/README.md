@@ -3,14 +3,14 @@
 A comprehensive Rust configuration loader that supports multiple sources with priority ordering:
 
 1. **Command-line arguments** (highest priority)
-2. **Environment variables** (APP_ prefix)
+2. **Environment variables** (APP\_ prefix)
 3. **Configuration files** (TOML, JSON, YAML)
 4. **Default values** (lowest priority)
 
 ## Features
 
 - ✅ **Multiple file formats**: TOML, JSON, YAML
-- ✅ **Environment variables**: APP_ prefixed variables
+- ✅ **Environment variables**: APP\_ prefixed variables
 - ✅ **CLI arguments**: Full clap integration
 - ✅ **Priority merging**: CLI > Env > File > Defaults
 - ✅ **Validation**: Config validation with descriptive errors
@@ -59,21 +59,25 @@ AppConfig {
 ## Usage Examples
 
 ### 1. Load from TOML file
+
 ```bash
 cargo run -- --config config.toml
 ```
 
 ### 2. Load from JSON file
+
 ```bash
 cargo run -- --config config.json
 ```
 
 ### 3. Load from YAML file
+
 ```bash
 cargo run -- --config config.yaml
 ```
 
 ### 4. Override with environment variables
+
 ```bash
 export APP_SERVER_PORT=9000
 export APP_DATABASE_HOST=prod-db.example.com
@@ -81,11 +85,13 @@ cargo run -- --config config.toml
 ```
 
 ### 5. Override with CLI arguments
+
 ```bash
 cargo run -- --config config.toml --server-host 0.0.0.0 --server-port 3000
 ```
 
 ### 6. Full CLI help
+
 ```bash
 cargo run -- --help
 ```
@@ -93,14 +99,17 @@ cargo run -- --help
 ## Configuration Sources Priority
 
 1. **CLI Arguments** (highest)
+
    - `--server-host localhost`
    - `--database-port 3306`
 
 2. **Environment Variables**
+
    - `APP_SERVER_HOST=localhost`
    - `APP_DATABASE_PORT=3306`
 
 3. **Configuration File**
+
    - TOML/JSON/YAML file specified by `--config`
 
 4. **Default Values** (lowest)
@@ -123,7 +132,7 @@ anyhow = "1.0"                                       # Error handling
 The implementation will include these key functions:
 
 - `load_config_from_file()` - Load from TOML/JSON/YAML files
-- `load_config_from_env()` - Load from APP_ prefixed environment variables
+- `load_config_from_env()` - Load from APP\_ prefixed environment variables
 - `load_config_from_args()` - Load from command-line arguments
 - `merge_configs()` - Deep merge configurations with priority
 - `validate_config()` - Validate final configuration
@@ -132,6 +141,7 @@ The implementation will include these key functions:
 ## File Format Detection
 
 Automatically detects format based on file extension:
+
 - `.toml` → TOML format
 - `.json` → JSON format
 - `.yaml` or `.yml` → YAML format
@@ -139,6 +149,7 @@ Automatically detects format based on file extension:
 ## Error Handling
 
 Comprehensive error types:
+
 - `FileNotFound` - Configuration file not found
 - `ParseError` - Invalid file format or syntax
 - `ValidationError` - Configuration validation failures
