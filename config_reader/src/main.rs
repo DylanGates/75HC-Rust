@@ -454,9 +454,35 @@ fn load_config() -> Result<AppConfig, ConfigError> {
 /// Display configuration in a human-readable format
 /// Useful for debugging and verification
 fn print_config(config: &AppConfig) {
-    // TODO: Pretty-print the configuration
-    // TODO: Show all sections and values
-    // TODO: Handle sensitive data (passwords) appropriately
+    println!("{:=^50}", " Configuration Loaded ");
+    println!("Server:");
+    println!("  Host: {}", config.server.host);
+    println!("  Port: {}", config.server.port);
+    if let Some(workers) = config.server.workers {
+        println!("  Workers: {}", workers);
+    }
+
+    println!("\nDatabase:");
+    println!("  Host: {}", config.database.host);
+    println!("  Port: {}", config.database.port);
+    println!("  Username: {}", config.database.username);
+    println!("  Password: {}", if config.database.password.is_empty() { "[empty]" } else { "[hidden]" });
+    println!("  Database: {}", config.database.database);
+    if let Some(max_conn) = config.database.max_connections {
+        println!("  Max Connections: {}", max_conn);
+    }
+
+    println!("\nLogging:");
+    println!("  Level: {}", config.logging.level);
+    if let Some(ref file) = config.logging.file {
+        println!("  File: {}", file);
+    }
+
+    println!("\nFeatures:");
+    for (key, value) in &config.features {
+        println!("  {}: {}", key, value);
+    }
+    println!("{:=^50}", "");
 }
 
 /// Main application entry point
