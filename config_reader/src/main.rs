@@ -292,10 +292,37 @@ fn load_config_from_args() -> Result<AppConfig, ConfigError> {
 /// Priority: CLI args > Environment variables > Config file
 /// Later sources override earlier ones for conflicting keys
 fn merge_configs(base: AppConfig, overrides: AppConfig) -> AppConfig {
-    // TODO: Implement deep merge of configuration structures
-    // TODO: Handle nested structures (server, database, logging)
-    // TODO: Handle HashMap merging for features
-    // TODO: Preserve base values when override doesn't specify them
+    let mut merged = base;
+
+    // Merge server config
+    merged.server.host = overrides.server.host;
+    merged.server.port = overrides.server.port;
+    if overrides.server.workers.is_some() {
+        merged.server.workers = overrides.server.workers;
+    }
+
+    // Merge database config
+    merged.database.host = overrides.database.host;
+    merged.database.port = overrides.database.port;
+    merged.database.username = overrides.database.username;
+    merged.database.password = overrides.database.password;
+    merged.database.database = overrides.database.database;
+    if overrides.database.max_connections.is_some() {
+        merged.database.max_connections = overrides.database.max_connections;
+    }
+
+    // Merge logging config
+    merged.logging.level = overrides.logging.level;
+    if overrides.logging.file.is_some() {
+        merged.logging.file = overrides.logging.file;
+    }
+
+    // Merge features (overrides take precedence)
+    for (key, value) in overrides.features {
+        merged.features.insert(key, value);
+    }
+
+    merged
 }
 
 /// Validate the final configuration
