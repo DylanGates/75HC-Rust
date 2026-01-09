@@ -65,9 +65,32 @@ pub enum ConfigError {
 /// Automatically detects format based on file extension
 /// Returns the parsed configuration or an error
 fn load_config_from_file<P: AsRef<Path>>(file_path: P) -> Result<AppConfig, ConfigError> {
-    // TODO: Implement file reading and format detection
-    // TODO: Parse based on file extension (.toml, .json, .yaml/.yml)
-    // TODO: Return parsed AppConfig or appropriate error
+    let file_path = file_path.as_ref();
+
+    if !file_path.exists() {
+        return Err(ConfigError::FileNotFound(file_path.to_string_lossy().to_string()));
+    }
+
+    let format = detect_format_from_extension(file_path)
+        .ok_or_else(|| ConfigError::ParseError("Unsupported file format".to_string()))?;
+
+    let contents = fs::read_to_string(file_path)
+        .map_err(ConfigError::IoError)?;
+
+    match format {
+        ConfigFormat::Toml => {
+            toml::from_str(&contents)
+                .map_err(|e| ConfigError::ParseError(format!("TOML parse error: {}", e)))
+        }
+        ConfigFormat::Json => {
+            serde_json::from_str(&contents)
+                .map_err(|e| ConfigError::ParseError(format!("JSON parse error: {}", e)))
+        }
+        ConfigFormat::Yaml => {
+            serde_yaml::from_str(&contents)
+                .map_err(|e| ConfigError::ParseError(format!("YAML parse error: {}", e)))
+        }
+    }
 }
 
 /// Load configuration from environment variables
