@@ -1,0 +1,23 @@
+[package]
+name = "config_reader"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Serialization/deserialization framework
+serde = { version = "1.0", features = ["derive"] }
+
+# JSON support
+serde_json = "1.0"
+
+# YAML support
+serde_yaml = "0.9"
+
+# TOML support
+toml = "0.8"
+
+# Command-line argument parsing
+clap = { version = "4.0", features = ["derive"] }
+
+# Additional utilities
+anyhow = "1.0"  # Error handling
