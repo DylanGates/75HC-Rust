@@ -161,10 +161,131 @@ fn load_config_from_env(existing_config: Option<AppConfig>) -> Result<AppConfig,
 /// Uses clap to define and parse CLI arguments
 /// Highest priority - overrides file and env configs
 fn load_config_from_args() -> Result<AppConfig, ConfigError> {
-    // TODO: Define CLI argument structure with clap
-    // TODO: Parse command line arguments
-    // TODO: Convert to AppConfig structure
-    // TODO: Handle parsing errors
+    let matches = Command::new("Config Reader")
+        .version("1.0")
+        .author("Rust Config Reader")
+        .about("Multi-source configuration loader")
+        .arg(
+            Arg::new("config")
+                .long("config")
+                .short('c')
+                .value_name("FILE")
+                .help("Configuration file (TOML, JSON, or YAML)")
+        )
+        .arg(
+            Arg::new("server-host")
+                .long("server-host")
+                .value_name("HOST")
+                .help("Server host address")
+        )
+        .arg(
+            Arg::new("server-port")
+                .long("server-port")
+                .value_name("PORT")
+                .help("Server port number")
+        )
+        .arg(
+            Arg::new("server-workers")
+                .long("server-workers")
+                .value_name("WORKERS")
+                .help("Number of server workers")
+        )
+        .arg(
+            Arg::new("database-host")
+                .long("database-host")
+                .value_name("HOST")
+                .help("Database host address")
+        )
+        .arg(
+            Arg::new("database-port")
+                .long("database-port")
+                .value_name("PORT")
+                .help("Database port number")
+        )
+        .arg(
+            Arg::new("database-username")
+                .long("database-username")
+                .value_name("USERNAME")
+                .help("Database username")
+        )
+        .arg(
+            Arg::new("database-password")
+                .long("database-password")
+                .value_name("PASSWORD")
+                .help("Database password")
+        )
+        .arg(
+            Arg::new("database-name")
+                .long("database-name")
+                .value_name("NAME")
+                .help("Database name")
+        )
+        .arg(
+            Arg::new("database-max-connections")
+                .long("database-max-connections")
+                .value_name("MAX")
+                .help("Maximum database connections")
+        )
+        .arg(
+            Arg::new("logging-level")
+                .long("logging-level")
+                .value_name("LEVEL")
+                .help("Logging level (debug, info, warn, error)")
+        )
+        .arg(
+            Arg::new("logging-file")
+                .long("logging-file")
+                .value_name("FILE")
+                .help("Log file path")
+        )
+        .get_matches();
+
+    let mut config = create_default_config();
+
+    // Server configuration
+    if let Some(host) = matches.get_one::<String>("server-host") {
+        config.server.host = host.clone();
+    }
+    if let Some(port_str) = matches.get_one::<String>("server-port") {
+        config.server.port = port_str.parse()
+            .map_err(|_| ConfigError::ParseError("Invalid server port".to_string()))?;
+    }
+    if let Some(workers_str) = matches.get_one::<String>("server-workers") {
+        config.server.workers = Some(workers_str.parse()
+            .map_err(|_| ConfigError::ParseError("Invalid server workers".to_string()))?);
+    }
+
+    // Database configuration
+    if let Some(host) = matches.get_one::<String>("database-host") {
+        config.database.host = host.clone();
+    }
+    if let Some(port_str) = matches.get_one::<String>("database-port") {
+        config.database.port = port_str.parse()
+            .map_err(|_| ConfigError::ParseError("Invalid database port".to_string()))?;
+    }
+    if let Some(username) = matches.get_one::<String>("database-username") {
+        config.database.username = username.clone();
+    }
+    if let Some(password) = matches.get_one::<String>("database-password") {
+        config.database.password = password.clone();
+    }
+    if let Some(database) = matches.get_one::<String>("database-name") {
+        config.database.database = database.clone();
+    }
+    if let Some(max_conn_str) = matches.get_one::<String>("database-max-connections") {
+        config.database.max_connections = Some(max_conn_str.parse()
+            .map_err(|_| ConfigError::ParseError("Invalid max connections".to_string()))?);
+    }
+
+    // Logging configuration
+    if let Some(level) = matches.get_one::<String>("logging-level") {
+        config.logging.level = level.clone();
+    }
+    if let Some(file) = matches.get_one::<String>("logging-file") {
+        config.logging.file = Some(file.clone());
+    }
+
+    Ok(config)
 }
 
 /// Merge multiple configuration sources with priority order
