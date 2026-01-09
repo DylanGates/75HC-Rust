@@ -328,11 +328,50 @@ fn merge_configs(base: AppConfig, overrides: AppConfig) -> AppConfig {
 /// Validate the final configuration
 /// Checks for required fields, valid ranges, and logical consistency
 fn validate_config(config: &AppConfig) -> Result<(), ConfigError> {
-    // TODO: Validate server configuration (host format, port range)
-    // TODO: Validate database configuration (connection parameters)
-    // TODO: Validate logging configuration (log levels)
-    // TODO: Check for logical inconsistencies
-    // TODO: Return validation errors with descriptive messages
+    // Validate server configuration
+    if config.server.host.is_empty() {
+        return Err(ConfigError::ValidationError("Server host cannot be empty".to_string()));
+    }
+    if config.server.port == 0 {
+        return Err(ConfigError::ValidationError("Server port must be greater than 0".to_string()));
+    }
+    if let Some(workers) = config.server.workers {
+        if workers == 0 {
+            return Err(ConfigError::ValidationError("Server workers must be greater than 0".to_string()));
+        }
+    }
+
+    // Validate database configuration
+    if config.database.host.is_empty() {
+        return Err(ConfigError::ValidationError("Database host cannot be empty".to_string()));
+    }
+    if config.database.port == 0 {
+        return Err(ConfigError::ValidationError("Database port must be greater than 0".to_string()));
+    }
+    if config.database.username.is_empty() {
+        return Err(ConfigError::ValidationError("Database username cannot be empty".to_string()));
+    }
+    if config.database.database.is_empty() {
+        return Err(ConfigError::ValidationError("Database name cannot be empty".to_string()));
+    }
+    if let Some(max_conn) = config.database.max_connections {
+        if max_conn == 0 {
+            return Err(ConfigError::ValidationError("Database max connections must be greater than 0".to_string()));
+        }
+    }
+
+    // Validate logging configuration
+    let valid_levels = ["debug", "info", "warn", "error"];
+    if !valid_levels.contains(&config.logging.level.as_str()) {
+        return Err(ConfigError::ValidationError(format!("Invalid logging level: {}", config.logging.level)));
+    }
+
+    // Check for logical inconsistencies
+    if config.database.password.is_empty() && config.database.host != "localhost" {
+        eprintln!("Warning: Empty database password used with non-localhost host");
+    }
+
+    Ok(())
 }
 
 /// Determine config file format from file extension
