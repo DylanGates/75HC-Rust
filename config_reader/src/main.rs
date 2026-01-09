@@ -97,10 +97,64 @@ fn load_config_from_file<P: AsRef<Path>>(file_path: P) -> Result<AppConfig, Conf
 /// Looks for variables with APP_ prefix (e.g., APP_SERVER_HOST, APP_DATABASE_PORT)
 /// Merges with existing config if provided
 fn load_config_from_env(existing_config: Option<AppConfig>) -> Result<AppConfig, ConfigError> {
-    // TODO: Read environment variables with APP_ prefix
-    // TODO: Parse and convert to appropriate types
-    // TODO: Merge with existing config or create new one
-    // TODO: Handle type conversion errors
+    let mut config = existing_config.unwrap_or_else(create_default_config);
+
+    // Server configuration
+    if let Ok(host) = env::var("APP_SERVER_HOST") {
+        config.server.host = host;
+    }
+    if let Ok(port_str) = env::var("APP_SERVER_PORT") {
+        config.server.port = port_str.parse()
+            .map_err(|_| ConfigError::ParseError("Invalid APP_SERVER_PORT".to_string()))?;
+    }
+    if let Ok(workers_str) = env::var("APP_SERVER_WORKERS") {
+        config.server.workers = Some(workers_str.parse()
+            .map_err(|_| ConfigError::ParseError("Invalid APP_SERVER_WORKERS".to_string()))?);
+    }
+
+    // Database configuration
+    if let Ok(host) = env::var("APP_DATABASE_HOST") {
+        config.database.host = host;
+    }
+    if let Ok(port_str) = env::var("APP_DATABASE_PORT") {
+        config.database.port = port_str.parse()
+            .map_err(|_| ConfigError::ParseError("Invalid APP_DATABASE_PORT".to_string()))?;
+    }
+    if let Ok(username) = env::var("APP_DATABASE_USERNAME") {
+        config.database.username = username;
+    }
+    if let Ok(password) = env::var("APP_DATABASE_PASSWORD") {
+        config.database.password = password;
+    }
+    if let Ok(database) = env::var("APP_DATABASE_DATABASE") {
+        config.database.database = database;
+    }
+    if let Ok(max_conn_str) = env::var("APP_DATABASE_MAX_CONNECTIONS") {
+        config.database.max_connections = Some(max_conn_str.parse()
+            .map_err(|_| ConfigError::ParseError("Invalid APP_DATABASE_MAX_CONNECTIONS".to_string()))?);
+    }
+
+    // Logging configuration
+    if let Ok(level) = env::var("APP_LOGGING_LEVEL") {
+        config.logging.level = level;
+    }
+    if let Ok(file) = env::var("APP_LOGGING_FILE") {
+        config.logging.file = Some(file);
+    }
+
+    // Feature flags
+    for (key, _) in env::vars() {
+        if key.starts_with("APP_FEATURES_") {
+            let feature_name = key.strip_prefix("APP_FEATURES_").unwrap().to_lowercase();
+            if let Ok(value_str) = env::var(&key) {
+                if let Ok(value) = value_str.parse::<bool>() {
+                    config.features.insert(feature_name, value);
+                }
+            }
+        }
+    }
+
+    Ok(config)
 }
 
 /// Load configuration from command line arguments
