@@ -61,6 +61,32 @@ pub enum ConfigError {
     IoError(std::io::Error),
 }
 
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConfigError::FileNotFound(path) => write!(f, "Configuration file not found: {}", path),
+            ConfigError::ParseError(msg) => write!(f, "Parse error: {}", msg),
+            ConfigError::ValidationError(msg) => write!(f, "Validation error: {}", msg),
+            ConfigError::IoError(err) => write!(f, "IO error: {}", err),
+        }
+    }
+}
+
+impl std::error::Error for ConfigError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ConfigError::IoError(err) => Some(err),
+            _ => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for ConfigError {
+    fn from(err: std::io::Error) -> Self {
+        ConfigError::IoError(err)
+    }
+}
+
 /// Load configuration from a file (TOML, JSON, or YAML)
 /// Automatically detects format based on file extension
 /// Returns the parsed configuration or an error
