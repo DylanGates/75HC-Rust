@@ -488,9 +488,31 @@ fn print_config(config: &AppConfig) {
 /// Main application entry point
 /// Demonstrates configuration loading and usage
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // TODO: Load configuration using load_config()
-    // TODO: Handle configuration errors gracefully
-    // TODO: Print loaded configuration
-    // TODO: Demonstrate configuration usage
-    // TODO: Exit with appropriate status code
+    match load_config() {
+        Ok(config) => {
+            println!("✅ Configuration loaded successfully!");
+            print_config(&config);
+
+            // Demonstrate usage
+            println!("\n🚀 Starting application with configuration:");
+            println!("   Server will listen on {}:{}", config.server.host, config.server.port);
+            println!("   Database connection: {}@{}:{}/{}",
+                config.database.username,
+                config.database.host,
+                config.database.port,
+                config.database.database
+            );
+            println!("   Logging level: {}", config.logging.level);
+
+            if config.features.get("debug_mode").copied().unwrap_or(false) {
+                println!("   Debug mode: ENABLED");
+            }
+
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to load configuration: {:?}", e);
+            std::process::exit(1);
+        }
+    }
 }
