@@ -112,9 +112,15 @@ fn validate_config(config: &AppConfig) -> Result<(), ConfigError> {
 
 /// Determine config file format from file extension
 fn detect_format_from_extension(file_path: &Path) -> Option<ConfigFormat> {
-    // TODO: Extract file extension
-    // TODO: Match against supported formats
-    // TODO: Return ConfigFormat enum or None
+    file_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .and_then(|ext_str| match ext_str.to_lowercase().as_str() {
+            "toml" => Some(ConfigFormat::Toml),
+            "json" => Some(ConfigFormat::Json),
+            "yaml" | "yml" => Some(ConfigFormat::Yaml),
+            _ => None,
+        })
 }
 
 /// Create default configuration with sensible defaults
