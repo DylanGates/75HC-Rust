@@ -446,19 +446,14 @@ fn create_default_config() -> AppConfig {
 /// Orchestrates loading from all sources in priority order
 /// Priority: CLI args > Environment > Config file > Defaults
 fn load_config() -> Result<AppConfig, ConfigError> {
+    // Load CLI args first to get config file path
+    let cli_config = load_config_from_args()?;
+    let config_file_path = "config.toml"; // Default - could be extracted from CLI in future
+
     // Start with defaults
     let mut config = create_default_config();
 
-    // Load from CLI arguments (highest priority)
-    let cli_config = load_config_from_args()?;
-    config = merge_configs(config, cli_config);
-
-    // Load from environment variables
-    config = load_config_from_env(Some(config))?;
-
-    // Load from config file if specified in CLI args
-    // Note: This is a simplified version - in practice you'd check CLI args first
-    let config_file_path = "config.toml"; // Default config file
+    // Load from config file if it exists
     if Path::new(config_file_path).exists() {
         match load_config_from_file(config_file_path) {
             Ok(file_config) => {
@@ -470,6 +465,12 @@ fn load_config() -> Result<AppConfig, ConfigError> {
             Err(e) => return Err(e),
         }
     }
+
+    // Load from environment variables
+    config = load_config_from_env(Some(config))?;
+
+    // Apply CLI overrides (highest priority)
+    config = merge_configs(config, cli_config);
 
     // Validate final configuration
     validate_config(&config)?;
