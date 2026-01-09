@@ -52,6 +52,22 @@ pub enum ConfigFormat {
     Yaml,
 }
 
+/// CLI command types
+#[derive(Debug, Clone)]
+pub enum CliCommand {
+    Run,
+    Info,
+    Validate,
+    Defaults,
+}
+
+/// CLI arguments structure
+#[derive(Debug, Clone)]
+pub struct CliArgs {
+    pub command: CliCommand,
+    pub config_file: Option<String>,
+}
+
 /// Error type for configuration operations
 #[derive(Debug)]
 pub enum ConfigError {
@@ -186,7 +202,184 @@ fn load_config_from_env(existing_config: Option<AppConfig>) -> Result<AppConfig,
 /// Load configuration from command line arguments
 /// Uses clap to define and parse CLI arguments
 /// Highest priority - overrides file and env configs
-fn load_config_from_args() -> Result<AppConfig, ConfigError> {
+fn load_config_from_args() -> Result<(AppConfig, CliArgs), ConfigError> {
+    let matches = Command::new("Config Reader")
+        .version("1.0")
+        .author("Rust Config Reader")
+        .about("Multi-source configuration loader")
+        .subcommand(
+            Command::new("info")
+                .about("Display current configuration information")
+                .arg(
+                    Arg::new("config")
+                        .long("config")
+                        .short('c')
+                        .value_name("FILE")
+                        .help("Configuration file to load")
+                )
+        )
+        .subcommand(
+            Command::new("validate")
+                .about("Validate configuration without running application")
+                .arg(
+                    Arg::new("config")
+                        .long("config")
+                        .short('c')
+                        .value_name("FILE")
+                        .help("Configuration file to validate")
+                )
+        )
+        .subcommand(
+            Command::new("defaults")
+                .about("Show default configuration values")
+        )
+        .subcommand(
+            Command::new("run")
+                .about("Run application with configuration")
+                .arg(
+                    Arg::new("config")
+                        .long("config")
+                        .short('c')
+                        .value_name("FILE")
+                        .help("Configuration file (TOML, JSON, or YAML)")
+                )
+                .arg(
+                    Arg::new("server-host")
+                        .long("server-host")
+                        .value_name("HOST")
+                        .help("Server host address")
+                )
+                .arg(
+                    Arg::new("server-port")
+                        .long("server-port")
+                        .value_name("PORT")
+                        .help("Server port number")
+                )
+                .arg(
+                    Arg::new("server-workers")
+                        .long("server-workers")
+                        .value_name("WORKERS")
+                        .help("Number of server workers")
+                )
+                .arg(
+                    Arg::new("database-host")
+                        .long("database-host")
+                        .value_name("HOST")
+                        .help("Database host address")
+                )
+                .arg(
+                    Arg::new("database-port")
+                        .long("database-port")
+                        .value_name("PORT")
+                        .help("Database port number")
+                )
+                .arg(
+                    Arg::new("database-username")
+                        .long("database-username")
+                        .value_name("USERNAME")
+                        .help("Database username")
+                )
+                .arg(
+                    Arg::new("database-password")
+                        .long("database-password")
+                        .value_name("PASSWORD")
+                        .help("Database password")
+                )
+                .arg(
+                    Arg::new("database-name")
+                        .long("database-name")
+                        .value_name("NAME")
+                        .help("Database name")
+                )
+                .arg(
+                    Arg::new("database-max-connections")
+                        .long("database-max-connections")
+                        .value_name("MAX")
+                        .help("Maximum database connections")
+                )
+                .arg(
+                    Arg::new("logging-level")
+                        .long("logging-level")
+                        .value_name("LEVEL")
+                        .help("Logging level (debug, info, warn, error)")
+                )
+                .arg(
+                    Arg::new("logging-file")
+                        .long("logging-file")
+                        .value_name("FILE")
+                        .help("Log file path")
+                )
+        )
+        .get_matches();
+
+    let cli_args = CliArgs {
+        command: if let Some(_) = matches.subcommand_matches("info") {
+            CliCommand::Info
+        } else if let Some(_) = matches.subcommand_matches("validate") {
+            CliCommand::Validate
+        } else if let Some(_) = matches.subcommand_matches("defaults") {
+            CliCommand::Defaults
+        } else {
+            CliCommand::Run
+        },
+        config_file: matches.subcommand_matches("run")
+            .and_then(|m| m.get_one::<String>("config").cloned())
+            .or_else(|| matches.subcommand_matches("info")
+                .and_then(|m| m.get_one::<String>("config").cloned()))
+            .or_else(|| matches.subcommand_matches("validate")
+                .and_then(|m| m.get_one::<String>("config").cloned())),
+    };
+
+    let mut config = create_default_config();
+
+    // Only parse run command arguments
+    if let Some(run_matches) = matches.subcommand_matches("run") {
+        // Server configuration
+        if let Some(host) = run_matches.get_one::<String>("server-host") {
+            config.server.host = host.clone();
+        }
+        if let Some(port_str) = run_matches.get_one::<String>("server-port") {
+            config.server.port = port_str.parse()
+                .map_err(|_| ConfigError::ParseError("Invalid server port".to_string()))?;
+        }
+        if let Some(workers_str) = run_matches.get_one::<String>("server-workers") {
+            config.server.workers = Some(workers_str.parse()
+                .map_err(|_| ConfigError::ParseError("Invalid server workers".to_string()))?);
+        }
+
+        // Database configuration
+        if let Some(host) = run_matches.get_one::<String>("database-host") {
+            config.database.host = host.clone();
+        }
+        if let Some(port_str) = run_matches.get_one::<String>("database-port") {
+            config.database.port = port_str.parse()
+                .map_err(|_| ConfigError::ParseError("Invalid database port".to_string()))?;
+        }
+        if let Some(username) = run_matches.get_one::<String>("database-username") {
+            config.database.username = username.clone();
+        }
+        if let Some(password) = run_matches.get_one::<String>("database-password") {
+            config.database.password = password.clone();
+        }
+        if let Some(database) = run_matches.get_one::<String>("database-name") {
+            config.database.database = database.clone();
+        }
+        if let Some(max_conn_str) = run_matches.get_one::<String>("database-max-connections") {
+            config.database.max_connections = Some(max_conn_str.parse()
+                .map_err(|_| ConfigError::ParseError("Invalid max connections".to_string()))?);
+        }
+
+        // Logging configuration
+        if let Some(level) = run_matches.get_one::<String>("logging-level") {
+            config.logging.level = level.clone();
+        }
+        if let Some(file) = run_matches.get_one::<String>("logging-file") {
+            config.logging.file = Some(file.clone());
+        }
+    }
+
+    Ok((config, cli_args))
+}
     let matches = Command::new("Config Reader")
         .version("1.0")
         .author("Rust Config Reader")
@@ -445,15 +638,12 @@ fn create_default_config() -> AppConfig {
 /// Main configuration loading function
 /// Orchestrates loading from all sources in priority order
 /// Priority: CLI args > Environment > Config file > Defaults
-fn load_config() -> Result<AppConfig, ConfigError> {
-    // Load CLI args first to get config file path
-    let cli_config = load_config_from_args()?;
-    let config_file_path = "config.toml"; // Default - could be extracted from CLI in future
-
+fn load_config(cli_args: &CliArgs) -> Result<AppConfig, ConfigError> {
     // Start with defaults
     let mut config = create_default_config();
 
-    // Load from config file if it exists
+    // Load from config file if specified or default exists
+    let config_file_path = cli_args.config_file.as_deref().unwrap_or("config.toml");
     if Path::new(config_file_path).exists() {
         match load_config_from_file(config_file_path) {
             Ok(file_config) => {
@@ -469,8 +659,8 @@ fn load_config() -> Result<AppConfig, ConfigError> {
     // Load from environment variables
     config = load_config_from_env(Some(config))?;
 
-    // Apply CLI overrides (highest priority)
-    config = merge_configs(config, cli_config);
+    // CLI overrides are already applied in load_config_from_args
+    // No need to merge again here
 
     // Validate final configuration
     validate_config(&config)?;
@@ -515,31 +705,71 @@ fn print_config(config: &AppConfig) {
 /// Main application entry point
 /// Demonstrates configuration loading and usage
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    match load_config() {
-        Ok(config) => {
-            println!("✅ Configuration loaded successfully!");
-            print_config(&config);
+    let (cli_config, cli_args) = load_config_from_args()?;
 
-            // Demonstrate usage
-            println!("\n🚀 Starting application with configuration:");
-            println!("   Server will listen on {}:{}", config.server.host, config.server.port);
-            println!("   Database connection: {}@{}:{}/{}",
-                config.database.username,
-                config.database.host,
-                config.database.port,
-                config.database.database
-            );
-            println!("   Logging level: {}", config.logging.level);
-
-            if config.features.get("debug_mode").copied().unwrap_or(false) {
-                println!("   Debug mode: ENABLED");
-            }
-
-            Ok(())
+    match cli_args.command {
+        CliCommand::Defaults => {
+            println!("📋 Default Configuration:");
+            print_config(&create_default_config());
         }
-        Err(e) => {
-            eprintln!("❌ Failed to load configuration: {:?}", e);
-            std::process::exit(1);
+
+        CliCommand::Info => {
+            match load_config(&cli_args) {
+                Ok(config) => {
+                    println!("ℹ️  Configuration Information:");
+                    print_config(&config);
+                }
+                Err(e) => {
+                    eprintln!("❌ Failed to load configuration: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        CliCommand::Validate => {
+            match load_config(&cli_args) {
+                Ok(config) => {
+                    println!("✅ Configuration is valid!");
+                    println!("📄 Loaded from: {}", cli_args.config_file.as_deref().unwrap_or("defaults"));
+                    println!("🔧 Sources merged: defaults + file + environment + CLI");
+                }
+                Err(e) => {
+                    eprintln!("❌ Configuration validation failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        CliCommand::Run => {
+            match load_config(&cli_args) {
+                Ok(config) => {
+                    println!("🚀 Starting application with configuration:");
+                    print_config(&config);
+
+                    // Demonstrate usage
+                    println!("\n⚙️  Application Status:");
+                    println!("   Server will listen on {}:{}", config.server.host, config.server.port);
+                    println!("   Database connection: {}@{}:{}/{}",
+                        config.database.username,
+                        config.database.host,
+                        config.database.port,
+                        config.database.database
+                    );
+                    println!("   Logging level: {}", config.logging.level);
+
+                    if config.features.get("debug_mode").copied().unwrap_or(false) {
+                        println!("   Debug mode: ENABLED");
+                    }
+
+                    println!("\n✅ Application ready!");
+                }
+                Err(e) => {
+                    eprintln!("❌ Failed to load configuration: {}", e);
+                    std::process::exit(1);
+                }
+            }
         }
     }
+
+    Ok(())
 }
