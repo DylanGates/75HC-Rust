@@ -119,8 +119,31 @@ fn detect_format_from_extension(file_path: &Path) -> Option<ConfigFormat> {
 
 /// Create default configuration with sensible defaults
 fn create_default_config() -> AppConfig {
-    // TODO: Define default values for all configuration fields
-    // TODO: Return AppConfig with defaults
+    let mut features = HashMap::new();
+    features.insert("debug_mode".to_string(), false);
+    features.insert("metrics".to_string(), true);
+    features.insert("cache".to_string(), true);
+
+    AppConfig {
+        server: ServerConfig {
+            host: "127.0.0.1".to_string(),
+            port: 8080,
+            workers: Some(4),
+        },
+        database: DatabaseConfig {
+            host: "localhost".to_string(),
+            port: 5432,
+            username: "postgres".to_string(),
+            password: "".to_string(),
+            database: "myapp".to_string(),
+            max_connections: Some(10),
+        },
+        logging: LoggingConfig {
+            level: "info".to_string(),
+            file: Some("app.log".to_string()),
+        },
+        features,
+    }
 }
 
 /// Main configuration loading function
