@@ -24,3 +24,4 @@ log = "0.4"
 
 # For convenient error handling
 anyhow = "1.0"
+url = "2"
