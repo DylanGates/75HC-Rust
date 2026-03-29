@@ -3,6 +3,10 @@ use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tower_http::trace::TraceLayer;
 use tracing::Span;
+use governor::{Quota, RateLimiter};
+use std::num::NonZeroU32;
+use tower_governor::{GovernorConfig, GovernorLayer};
+use std::time::Duration;
 
 mod db;
 mod error;
@@ -49,27 +53,37 @@ async fn main() -> anyhow::Result<()> {
         book_repo: BookRepository::new(pool),
     };
 
+    // Configure rate limiting: 60 requests per minute with burst of 10
+    let governor_config = GovernorConfig::builder()
+        .per_second(60) // 60 requests per minute
+        .burst_size(10) // Allow burst of 10 requests
+        .finish()
+        .unwrap();
+
     // Build the router
     let app = Router::new()
-    .merge(book_routes())
-    .layer(
-        TraceLayer::new_for_http()
-            .make_span_with(|request: &Request<_>| {
-                tracing::info_span!(
-                    "http_request",
-                    method = %request.method(),
-                    uri = %request.uri(),
-                )
-            })
-            .on_response(|response: &axum::http::Response<_>, latency: std::time::Duration, _span: &Span| {
-                tracing::info!(
-                    status = %response.status(),
-                    latency = ?latency,
-                    "response"
-                );
-            }),
-    )
-    .with_state(state);
+        .merge(book_routes())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &axum::http::Request<_>| {
+                    tracing::info_span!(
+                        "http_request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                    )
+                })
+                .on_response(|response: &axum::http::Response<_>, latency: std::time::Duration, _span: &Span| {
+                    tracing::info!(
+                        status = %response.status(),
+                        latency = ?latency,
+                        "response"
+                    );
+                }),
+        )
+        .layer(GovernorLayer {
+            config: std::sync::Arc::new(governor_config),
+        })
+        .with_state(state);
 
     // Start the server
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
