@@ -3,10 +3,11 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::models::book::{CreateBook, Book, BookPagination, BookSearch, BookUpdate, BookDelete};
+use crate::models::book::{CreateBook, Book, UpdateBook};
 
 // BookRepository encapsulates all database operations for books
 // Using a struct allows for easier testing with mocks
+#[derive(Clone)]
 pub struct BookRepository {
     pool: PgPool,
 }
@@ -102,9 +103,9 @@ impl BookRepository {
         .bind(now)
         .fetch_optional(&self.pool)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Book with id {} not found", id)));
+        .ok_or_else(|| AppError::NotFound(format!("Book with id {} not found", id)))?;
 
-        Ok(book)    
+        Ok(book)
     }
 
     // Delete a book by ID

@@ -24,6 +24,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Error handling
 thiserror = "1.0"
 anyhow = "1.0"
-# Rate limiting
-governor = "0.6"
-tower-governor = "0.3"
+# HTTP middleware
+tower-http = { version = "0.5", features = ["trace"] }
+# Testing
+tower = { version = "0.4", features = ["util"] }

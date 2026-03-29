@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::db::books::BookRepository;
 use crate::error::{AppError, AppResult};
-use crate::models::book::{CreateBook, Book, UpdateBook, DeleteBook};
+use crate::models::book::{CreateBook, Book, UpdateBook};
 
 // AppState holds shared application state
 // Clone is cheap because PgPool uses Arc internally

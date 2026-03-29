@@ -3,19 +3,22 @@ use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tower_http::trace::TraceLayer;
 use tracing::Span;
-use governor::{Quota, RateLimiter};
-use std::num::NonZeroU32;
-use tower_governor::{GovernorConfig, GovernorLayer};
-use std::time::Duration;
-
-mod db;
+mod db {
+    pub mod books;
+    pub mod pool;
+}
 mod error;
-mod handlers;
-mod models;
-mod routes;
+mod handlers {
+    pub mod books;
+}
+mod models {
+    pub mod book;
+}
+mod routes {
+    pub mod books;
+}
 
-use db_pool::create_pool;
-use db_pool::Pool;
+use db::pool::create_pool;
 use db::books::BookRepository;
 use handlers::books::AppState;
 use routes::books::book_routes;
@@ -53,14 +56,7 @@ async fn main() -> anyhow::Result<()> {
         book_repo: BookRepository::new(pool),
     };
 
-    // Configure rate limiting: 60 requests per minute with burst of 10
-    let governor_config = GovernorConfig::builder()
-        .per_second(60) // 60 requests per minute
-        .burst_size(10) // Allow burst of 10 requests
-        .finish()
-        .unwrap();
-
-    // Build the router
+    // Build the router with tracing middleware
     let app = Router::new()
         .merge(book_routes())
         .layer(
@@ -80,9 +76,6 @@ async fn main() -> anyhow::Result<()> {
                     );
                 }),
         )
-        .layer(GovernorLayer {
-            config: std::sync::Arc::new(governor_config),
-        })
         .with_state(state);
 
     // Start the server

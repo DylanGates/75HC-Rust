@@ -21,26 +21,30 @@ pub struct Book {
     pub author: String,
     pub genre: Genre,
     pub publication_date: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct BookCreate {
+pub struct CreateBook {
     pub title: String,
     pub description: String,
     pub author: String,
     pub genre: Genre,
+    pub publication_date: DateTime<Utc>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct BookUpdate {
+pub struct UpdateBook {
     pub title: Option<String>,
     pub description: Option<String>,
     pub author: Option<String>,
     pub genre: Option<Genre>,
+    pub publication_date: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct BookDelete {
+pub struct DeleteBook {
     pub id: Uuid,
 }
 

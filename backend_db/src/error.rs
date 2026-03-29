@@ -2,8 +2,8 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
-}
-use serde::{Deserialize, Serialize};
+};
+use serde_json::json;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
