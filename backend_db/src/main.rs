@@ -1,6 +1,8 @@
 use axum::Router;
 use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tower_http::trace::TraceLayer;
+use tracing::Span;
 
 mod db;
 mod error;
@@ -49,8 +51,25 @@ async fn main() -> anyhow::Result<()> {
 
     // Build the router
     let app = Router::new()
-        .merge(book_routes())
-        .with_state(state);
+    .merge(book_routes())
+    .layer(
+        TraceLayer::new_for_http()
+            .make_span_with(|request: &Request<_>| {
+                tracing::info_span!(
+                    "http_request",
+                    method = %request.method(),
+                    uri = %request.uri(),
+                )
+            })
+            .on_response(|response: &axum::http::Response<_>, latency: std::time::Duration, _span: &Span| {
+                tracing::info!(
+                    status = %response.status(),
+                    latency = ?latency,
+                    "response"
+                );
+            }),
+    )
+    .with_state(state);
 
     // Start the server
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
