@@ -11,7 +11,7 @@ use tower::util::ServiceExt;
 // Helper function to create test app
 async fn setup_test_app() -> Router {
     // For now, return a simple test router
-    // In a real implementation, you'd set up a test database
+    // In a real implementation, you'd set up a test databasex
     Router::new()
 }
 
