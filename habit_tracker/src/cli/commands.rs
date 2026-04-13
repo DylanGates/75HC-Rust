@@ -1,21 +1,35 @@
 use colored::*;
-use dialoguer::{Select, Input, Confirm};
-use crate::cli::args::{Commands, parse_frequency};
+use dialoguer::{Select, Input, Confirm, MultiSelect};
+use anyhow::{Result, Context};
+use std::path::Path;
+
+use crate::cli::args::{Commands, CategoryArg, PriorityArg, SortBy, ExportFormat, FrequencyArg};
 use crate::cli::display::TableFormatter;
-use crate::models::{Habit, HabitCategory, HabitFrequency, Priority};
+use crate::cli::progress::{ProgressBar, Color};
+use crate::models::{Habit, HabitCategory, Priority};
 use crate::tracker::HabitTracker;
 use crate::stats::StatsCalculator;
-use crate::storage::Storage;
+use crate::storage::JsonStorage;
 use uuid::Uuid;
 
 pub struct CommandHandler {
     tracker: HabitTracker,
-    storage: Storage,
+    storage: JsonStorage,
+    verbose: bool,
 }
 
 impl CommandHandler {
-    pub fn new() -> Self {
-        let storage = Storage::new("habits.json");
+    pub fn new(data_dir: Option<String>, verbose: bool) -> Result<Self> {
+        let storage = if let Some(dir) = data_dir {
+            JsonStorage::with_dir(dir)?
+        } else {
+            JsonStorage::new()?
+        };
+        
+        if verbose {
+            eprintln!("Using data directory: {:?}", storage.data_dir());
+        }
+        
         let habits = storage.load().unwrap_or_default();
         let mut tracker = HabitTracker::new();
         
@@ -23,229 +37,397 @@ impl CommandHandler {
             tracker.add(habit);
         }
         
-        Self { tracker, storage }
+        Ok(Self { tracker, storage, verbose })
     }
 
-    pub fn execute(&mut self, cmd: Commands) {
+    pub fn execute(&mut self, cmd: Commands) -> Result<()> {
         match cmd {
             Commands::Add { name, description, category, frequency, target, priority } => {
-                self.cmd_add(name, description, category, frequency, target, priority);
+                self.cmd_add(name, description, category, frequency, target, priority)?;
             }
-            Commands::List { category, archived, due } => {
-                self.cmd_list(category, archived, due);
+            Commands::List { category, archived, due, done, sort } => {
+                self.cmd_list(category, archived, due, done, sort)?;
             }
             Commands::Done { id } => {
-                self.cmd_done(id);
+                self.cmd_done(id)?;
             }
             Commands::Show { id } => {
-                self.cmd_show(id);
+                self.cmd_show(id)?;
             }
-            Commands::Edit { id, name, description } => {
-                self.cmd_edit(id, name, description);
+            Commands::Edit { id, name, description, priority } => {
+                self.cmd_edit(id, name, description, priority)?;
             }
             Commands::Archive { id } => {
-                self.cmd_archive(id);
+                self.cmd_archive(id)?;
             }
             Commands::Restore { index } => {
-                self.cmd_restore(index);
+                self.cmd_restore(index)?;
             }
             Commands::Delete { id, force } => {
-                self.cmd_delete(id, force);
+                self.cmd_delete(id, force)?;
             }
-            Commands::Stats => {
-                self.cmd_stats();
+            Commands::Stats { by_category } => {
+                self.cmd_stats(by_category)?;
             }
             Commands::Dashboard => {
-                self.cmd_dashboard();
+                self.cmd_dashboard()?;
             }
-            Commands::Export { path } => {
-                self.cmd_export(path);
+            Commands::Export { path, format } => {
+                self.cmd_export(path, format)?;
+            }
+            Commands::Import { path, merge } => {
+                self.cmd_import(path, merge)?;
             }
             Commands::Interactive => {
-                self.cmd_interactive();
+                self.cmd_interactive()?;
+            }
+            Commands::Reset { really } => {
+                if really {
+                    self.cmd_reset()?;
+                } else {
+                    println!("Use --really to confirm data reset");
+                }
             }
         }
         
-        self.save();
+        self.save()?;
+        Ok(())
     }
 
-    fn cmd_add(&mut self, name: String, desc: Option<String>, cat: String, freq: String, target: u32, prio: String) {
-        let category = Commands::parse_category(&cat).unwrap_or(HabitCategory::Other);
-        let priority = Commands::parse_priority(&prio).unwrap_or(Priority::Medium);
-        let frequency = parse_frequency(&freq).unwrap_or(HabitFrequency::Daily);
-        
+    fn cmd_add(&mut self, name: String, desc: Option<String>, cat: CategoryArg, freq: FrequencyArg, target: u32, prio: PriorityArg) -> Result<()> {
         let habit = Habit::new(
             &name,
             &desc.unwrap_or_default(),
-            category,
-            frequency,
+            cat.into(),
+            freq.0,
             target,
-            priority,
+            prio.into(),
         );
         
         let id = self.tracker.add(habit);
-        println!("{} Created habit '{}' with ID {}", "✓".green(), name, id.to_string().dimmed());
+        
+        // Show progress animation
+        let bar = ProgressBar::new(20).with_chars('▓', '░').with_colors(Color::Green, Color::Dimmed);
+        println!("Creating habit...");
+        for i in 1..=5 {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            print!("\r{}", bar.render((i as f64 / 5.0) * 100.0));
+            std::io::stdout().flush().unwrap();
+        }
+        println!();
+        
+        println!("{} Created habit '{}' (ID: {})\n", "✓".green(), name.bold(), 
+            id.to_string().chars().take(8).collect::<String>().dimmed());
+        Ok(())
     }
 
-    fn cmd_list(&self, category: Option<String>, archived: bool, due: bool) {
+    fn cmd_list(&self, category: Option<CategoryArg>, archived: bool, due: bool, done: bool, sort: SortBy) -> Result<()> {
         let habits: Vec<&Habit> = if archived {
             self.tracker.archived().iter().collect()
-        } else if let Some(cat) = category {
-            let cat = Commands::parse_category(&cat).unwrap();
-            self.tracker.by_category(cat)
-        } else if due {
-            self.tracker.due_today()
         } else {
-            self.tracker.all()
+            let mut filtered: Vec<_> = self.tracker.all();
+            
+            if let Some(cat) = category {
+                let cat: HabitCategory = cat.into();
+                filtered.retain(|h| h.category == cat);
+            }
+            
+            if due {
+                filtered.retain(|h| h.is_due_today() && !h.is_completed_today());
+            }
+            
+            if done {
+                filtered.retain(|h| h.is_completed_today());
+            }
+            
+            filtered
         };
 
         if habits.is_empty() {
-            println!("{}", "No habits found".dimmed());
-            return;
+            println!("{}", "No habits found. Create one with: habit-tracker add <name>".dimmed());
+            return Ok(());
         }
 
-        println!("{}", TableFormatter::habits(&habits));
-        println!("{} habits total", habits.len());
+        println!("{}", TableFormatter::habits(&habits, &sort));
+        
+        // Summary footer with progress bar
+        let total = habits.len();
+        let completed_today = habits.iter().filter(|h| h.is_completed_today()).count();
+        let pct = if total > 0 { (completed_today as f64 / total as f64) * 100.0 } else { 0.0 };
+        
+        let bar = ProgressBar::new(15)
+            .with_chars('█', '░')
+            .with_colors(if pct >= 80.0 { Color::Green } else { Color::Yellow }, Color::Dimmed);
+        
+        println!("\n{} habits | {} done today | {}", 
+            total, 
+            format!("{}/{}", completed_today, total).cyan(),
+            bar.render(pct));
+        
+        Ok(())
     }
 
-    fn cmd_done(&mut self, id: String) {
-        let uuid = self.resolve_id(&id);
-        match uuid {
-            Some(uid) => match self.tracker.complete(uid) {
-                Ok(_) => println!("{} Marked habit as complete!", "✓".green()),
-                Err(e) => println!("{} {}", "✗".red(), e),
-            },
-            None => println!("{} Habit not found", "✗".red()),
-        }
-    }
-
-    fn cmd_show(&self, id: String) {
-        let uuid = self.resolve_id(&id);
-        match uuid.and_then(|u| self.tracker.get(u)) {
-            Some(h) => println!("{}", TableFormatter::habit_detail(h)),
-            None => println!("{} Habit not found", "✗".red()),
-        }
-    }
-
-    fn cmd_edit(&mut self, id: String, name: Option<String>, desc: Option<String>) {
-        let uuid = self.resolve_id(&id);
-        match uuid {
-            Some(uid) => match self.tracker.update(uid, name.as_deref(), desc.as_deref()) {
-                Ok(_) => println!("{} Updated habit", "✓".green()),
-                Err(e) => println!("{} {}", "✗".red(), e),
-            },
-            None => println!("{} Habit not found", "✗".red()),
-        }
-    }
-
-    fn cmd_archive(&mut self, id: String) {
-        let uuid = self.resolve_id(&id);
-        match uuid {
-            Some(uid) => match self.tracker.archive(uid) {
-                Ok(_) => println!("{} Archived habit", "✓".green()),
-                Err(e) => println!("{} {}", "✗".red(), e),
-            },
-            None => println!("{} Habit not found", "✗".red()),
-        }
-    }
-
-    fn cmd_restore(&mut self, index: usize) {
-        match self.tracker.restore(index) {
-            Ok(id) => println!("{} Restored habit {}", "✓".green(), id),
-            Err(e) => println!("{} {}", "✗".red(), e),
+    fn cmd_done(&mut self, id: String) -> Result<()> {
+        let uuid = self.resolve_id(&id)
+            .ok_or_else(|| anyhow::anyhow!("Habit '{}' not found", id))?;
+            
+        let habit = self.tracker.get(uuid).unwrap();
+        let name = habit.name.clone();
+        
+        match self.tracker.complete(uuid) {
+            Ok(_) => {
+                // Celebration animation for streak milestones
+                let new_streak = self.tracker.get(uuid).unwrap().current_streak;
+                if new_streak % 7 == 0 {
+                    println!("{}", "🎉 WEEKLY STREAK MILESTONE! 🎉".green().bold().blink());
+                }
+                
+                println!("{} Completed '{}'! Streak: {} {}", 
+                    "✓".green().bold(), 
+                    name,
+                    new_streak.to_string().yellow().bold(),
+                    "🔥".repeat((new_streak / 7).min(5) as usize));
+                Ok(())
+            }
+            Err(e) => {
+                println!("{} {}", "✗".red(), e);
+                Ok(())
+            }
         }
     }
 
-    fn cmd_delete(&mut self, id: String, force: bool) {
-        if !force {
-            let confirm = Confirm::new()
-                .with_prompt("Are you sure? This cannot be undone")
-                .default(false)
-                .interact()
-                .unwrap();
-            if !confirm { return; }
+    fn cmd_show(&self, id: String) -> Result<()> {
+        let uuid = self.resolve_id(&id)
+            .ok_or_else(|| anyhow::anyhow!("Habit '{}' not found", id))?;
+            
+        let habit = self.tracker.get(uuid)
+            .ok_or_else(|| anyhow::anyhow!("Habit not found"))?;
+            
+        println!("{}", TableFormatter::habit_detail(habit));
+        Ok(())
+    }
+
+    fn cmd_edit(&mut self, id: String, name: Option<String>, desc: Option<String>, priority: Option<PriorityArg>) -> Result<()> {
+        let uuid = self.resolve_id(&id)
+            .ok_or_else(|| anyhow::anyhow!("Habit '{}' not found", id))?;
+            
+        let mut updates = Vec::new();
+        if let Some(n) = &name { updates.push(format!("name -> {}", n)); }
+        if let Some(d) = &desc { updates.push(format!("description updated")); }
+        if let Some(p) = &priority { updates.push(format!("priority -> {:?}", p)); }
+        
+        self.tracker.update(uuid, name.as_deref(), desc.as_deref())?;
+        
+        if let Some(p) = priority {
+            if let Some(h) = self.tracker.get_mut(uuid) {
+                h.priority = p.into();
+            }
         }
         
-        let uuid = self.resolve_id(&id);
-        match uuid {
-            Some(uid) => match self.tracker.delete_permanently(uid) {
-                Ok(_) => println!("{} Deleted habit", "✓".green()),
-                Err(e) => println!("{} {}", "✗".red(), e),
-            },
-            None => println!("{} Habit not found", "✗".red()),
-        }
+        println!("{} Updated: {}", "✓".green(), updates.join(", "));
+        Ok(())
     }
 
-    fn cmd_stats(&self) {
+    fn cmd_archive(&mut self, id: String) -> Result<()> {
+        let uuid = self.resolve_id(&id)
+            .ok_or_else(|| anyhow::anyhow!("Habit '{}' not found", id))?;
+            
+        self.tracker.archive(uuid)?;
+        println!("{} Archived habit (can restore with: restore <index>)", "📦".yellow());
+        Ok(())
+    }
+
+    fn cmd_restore(&mut self, index: usize) -> Result<()> {
+        let id = self.tracker.restore(index)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        println!("{} Restored habit {}", "✓".green(), id.to_string().dimmed());
+        Ok(())
+    }
+
+    fn cmd_delete(&mut self, id: String, force: bool) -> Result<()> {
+        if !force {
+            let confirm = Confirm::new()
+                .with_prompt("⚠️  Permanently delete? This cannot be undone")
+                .default(false)
+                .interact()?;
+            if !confirm { return Ok(()); }
+        }
+        
+        let uuid = self.resolve_id(&id)
+            .ok_or_else(|| anyhow::anyhow!("Habit '{}' not found", id))?;
+            
+        // Create backup before delete
+        self.storage.backup()?;
+        
+        self.tracker.delete_permanently(uuid)?;
+        println!("{} Deleted permanently", "🗑️".red());
+        Ok(())
+    }
+
+    fn cmd_stats(&self, by_category: bool) -> Result<()> {
         let stats = StatsCalculator::calculate(&self.tracker.all());
-        println!("{}", TableFormatter::stats(&stats));
-    }
-
-    fn cmd_dashboard(&self) {
-        println!("{}", TableFormatter::dashboard(&self.tracker.all()));
-    }
-
-    fn cmd_export(&self, path: String) {
-        let habits: Vec<Habit> = self.tracker.all().iter().map(|&h| h.clone()).collect();
-        match self.storage.export_csv(&habits, &path) {
-            Ok(_) => println!("{} Exported to {}", "✓".green(), path),
-            Err(e) => println!("{} {}", "✗".red(), e),
+        println!("{}", TableFormatter::stats(&stats, &self.tracker.all()));
+        
+        if by_category {
+            println!("{}", "Use --by-category for detailed breakdown".dimmed());
         }
+        Ok(())
     }
 
-    fn cmd_interactive(&mut self) {
+    fn cmd_dashboard(&self) -> Result<()> {
+        println!("{}", TableFormatter::dashboard(&self.tracker.all()));
+        Ok(())
+    }
+
+    fn cmd_export(&self, path: String, format: ExportFormat) -> Result<()> {
+        let habits: Vec<Habit> = self.tracker.all().iter().map(|&h| h.clone()).collect();
+        let path = Path::new(&path);
+        
+        match format {
+            ExportFormat::Csv => {
+                self.storage.export_csv(&habits, path)?;
+                println!("{} Exported {} habits to CSV: {:?}", "✓".green(), habits.len(), path);
+            }
+            ExportFormat::Json => {
+                self.storage.export_json(&habits, path)?;
+                println!("{} Exported {} habits to JSON: {:?}", "✓".green(), habits.len(), path);
+            }
+        }
+        Ok(())
+    }
+
+    fn cmd_import(&mut self, path: String, merge: bool) -> Result<()> {
+        let path = Path::new(&path);
+        let imported = self.storage.import_json(path)?;
+        
+        if !merge {
+            // Backup current before replace
+            self.storage.backup()?;
+            self.tracker = HabitTracker::new();
+        }
+        
+        let mut count = 0;
+        for habit in imported {
+            self.tracker.add(habit);
+            count += 1;
+        }
+        
+        println!("{} Imported {} habits", "✓".green(), count);
+        Ok(())
+    }
+
+    fn cmd_interactive(&mut self) -> Result<()> {
         loop {
             let choices = vec![
-                "List habits",
-                "Add habit",
-                "Complete habit",
-                "Dashboard",
-                "Stats",
-                "Exit",
+                "📋 List habits",
+                "➕ Add new habit",
+                "✅ Complete habit",
+                "📊 Dashboard",
+                "📈 Statistics",
+                "🔍 Show habit details",
+                "📦 Archive habit",
+                "❌ Exit",
             ];
             
             let selection = Select::new()
                 .with_prompt("What would you like to do?")
                 .items(&choices)
                 .default(0)
-                .interact()
-                .unwrap();
+                .interact()?;
 
             match selection {
-                0 => self.cmd_list(None, false, false),
+                0 => self.cmd_list(None, false, false, false, SortBy::Name)?,
                 1 => {
-                    let name: String = Input::new().with_prompt("Name").interact_text().unwrap();
-                    let desc: String = Input::new().with_prompt("Description").allow_empty(true).interact_text().unwrap();
-                    self.cmd_add(name, Some(desc), "other".to_string(), "daily".to_string(), 30, "medium".to_string());
+                    let name: String = Input::new().with_prompt("Habit name").interact_text()?;
+                    let desc: String = Input::new().with_prompt("Description (optional)").allow_empty(true).interact_text()?;
+                    
+                    let cats = vec!["Sports", "Study", "Work", "Health", "Mindfulness", "Other"];
+                    let cat_idx = Select::new().with_prompt("Category").items(&cats).default(0).interact()?;
+                    
+                    let freqs = vec!["Daily", "Weekly (Mon/Wed/Fri)", "Custom (every 3 days)"];
+                    let freq_idx = Select::new().with_prompt("Frequency").items(&freqs).default(0).interact()?;
+                    
+                    let freq = match freq_idx {
+                        1 => FrequencyArg(crate::models::HabitFrequency::Weekly { 
+                            days: vec![chrono::Weekday::Mon, chrono::Weekday::Wed, chrono::Weekday::Fri] 
+                        }),
+                        2 => FrequencyArg(crate::models::HabitFrequency::Custom { interval_days: 3 }),
+                        _ => FrequencyArg(crate::models::HabitFrequency::Daily),
+                    };
+                    
+                    self.cmd_add(name, Some(desc), CategoryArg::Other, freq, 30, PriorityArg::Medium)?;
                 }
                 2 => {
-                    let id: String = Input::new().with_prompt("Habit ID").interact_text().unwrap();
-                    self.cmd_done(id);
+                    let due = self.tracker.due_today();
+                    if due.is_empty() {
+                        println!("No habits due!");
+                    } else {
+                        let names: Vec<_> = due.iter().map(|h| h.name.as_str()).collect();
+                        let idx = Select::new().with_prompt("Complete which?").items(&names).interact()?;
+                        let id = due[idx].id.to_string();
+                        self.cmd_done(id)?;
+                    }
                 }
-                3 => self.cmd_dashboard(),
-                4 => self.cmd_stats(),
+                3 => self.cmd_dashboard()?,
+                4 => self.cmd_stats(false)?,
+                5 => {
+                    let all = self.tracker.all();
+                    let names: Vec<_> = all.iter().map(|h| h.name.as_str()).collect();
+                    let idx = Select::new().with_prompt("Show which?").items(&names).interact()?;
+                    let id = all[idx].id.to_string();
+                    self.cmd_show(id)?;
+                }
+                6 => {
+                    let all = self.tracker.all();
+                    let names: Vec<_> = all.iter().map(|h| h.name.as_str()).collect();
+                    let idx = Select::new().with_prompt("Archive which?").items(&names).interact()?;
+                    let id = all[idx].id.to_string();
+                    self.cmd_archive(id)?;
+                }
                 _ => break,
             }
             
             println!();
         }
+        Ok(())
+    }
+
+    fn cmd_reset(&mut self) -> Result<()> {
+        self.storage.backup()?;
+        self.tracker = HabitTracker::new();
+        println!("{} All data reset. Backup created.", "⚠️".yellow());
+        Ok(())
     }
 
     fn resolve_id(&self, id: &str) -> Option<Uuid> {
-        // Try direct UUID parse
+        // Try direct UUID parse (full or partial)
         if let Ok(uuid) = Uuid::parse_str(id) {
             return Some(uuid);
         }
         
-        // Try find by name (case insensitive)
+        // Try matching first 8 chars of UUID
+        let all = self.tracker.all();
+        if id.len() >= 4 {
+            for h in &all {
+                if h.id.to_string().starts_with(id) {
+                    return Some(h.id);
+                }
+            }
+        }
+        
+        // Try find by name (case insensitive, partial match)
         let id_lower = id.to_lowercase();
-        self.tracker.all().iter()
-            .find(|h| h.name.to_lowercase() == id_lower)
+        all.iter()
+            .find(|h| h.name.to_lowercase().contains(&id_lower))
             .map(|h| h.id)
     }
 
-    fn save(&self) {
+    fn save(&self) -> Result<()> {
         let habits: Vec<Habit> = self.tracker.all().iter().map(|&h| h.clone()).collect();
-        let _ = self.storage.save(&habits);
+        self.storage.save(&habits)?;
+        if self.verbose {
+            eprintln!("Saved {} habits to {:?}", habits.len(), self.storage.file_path());
+        }
+        Ok(())
     }
 }
