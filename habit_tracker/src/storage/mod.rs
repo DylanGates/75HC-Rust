@@ -1,2 +1,2 @@
-pub mod file;
-pub use file::Storage;
+pub mod json;
+pub use json::JsonStorage;
