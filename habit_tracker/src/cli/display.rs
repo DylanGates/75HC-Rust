@@ -1,49 +1,63 @@
 use colored::*;
-use comfy_table::{Table, ContentArrangement};
+use comfy_table::{Table, ContentArrangement, Cell};
 use crate::models::{Habit, Priority};
 use crate::stats::TrackerStats;
+use crate::cli::progress::{ProgressBar, StreakBar, WeeklyProgressBar, Color};
 
 pub struct TableFormatter;
 
 impl TableFormatter {
-    pub fn habits(habits: &[&Habit]) -> String {
+    pub fn habits(habits: &[&Habit], sort_by: &super::args::SortBy) -> String {
         let mut table = Table::new();
         table.set_content_arrangement(ContentArrangement::Dynamic);
+        table.load_preset(comfy_table::presets::UTF8_FULL);
         
         table.set_header(vec![
-            "ID".cell(),
-            "Name".cell(),
-            "Category".cell(),
-            "Freq".cell(),
-            "Streak".cell(),
-            "Rate".cell(),
-            "Status".cell(),
+            Cell::new("ID").fg(comfy_table::Color::Cyan),
+            Cell::new("Name"),
+            Cell::new("Category").fg(comfy_table::Color::Blue),
+            Cell::new("Streak"),
+            Cell::new("Weekly"),
+            Cell::new("Rate"),
+            Cell::new("Status"),
         ]);
 
-        for h in habits {
+        let mut sorted: Vec<_> = habits.iter().copied().collect();
+        match sort_by {
+            super::args::SortBy::Name => sorted.sort_by(|a, b| a.name.cmp(&b.name)),
+            super::args::SortBy::Streak => sorted.sort_by(|a, b| b.current_streak.cmp(&a.current_streak)),
+            super::args::SortBy::Rate => sorted.sort_by(|a, b| b.completion_rate().partial_cmp(&a.completion_rate()).unwrap()),
+            super::args::SortBy::Priority => sorted.sort_by(|a, b| b.priority.cmp(&a.priority)),
+            super::args::SortBy::Created => sorted.sort_by(|a, b| b.created_at.cmp(&a.created_at)),
+        }
+
+        for h in sorted {
             let status = if h.is_completed_today() {
-                "✓ Done".green()
+                "✓ DONE".green().bold()
             } else if h.is_due_today() {
-                "○ Due".yellow()
+                "○ DUE".yellow()
             } else {
                 "-".dimmed()
             };
 
-            let prio_icon = match h.priority {
-                Priority::Critical => "Critical ",
-                Priority::High => "High ",
-                Priority::Medium => "Medium ",
-                Priority::Low => "Low ",
+            let prio_color = match h.priority {
+                Priority::Critical => comfy_table::Color::Red,
+                Priority::High => comfy_table::Color::Yellow,
+                Priority::Medium => comfy_table::Color::White,
+                Priority::Low => comfy_table::Color::Grey,
             };
 
+            let (weekly_done, weekly_target) = h.weekly_progress();
+            
             table.add_row(vec![
-                h.id.to_string().dimmed().to_string(),
-                format!("{}{}", prio_icon, h.name),
-                h.category.to_string(),
-                format!("{:?}", h.frequency).dimmed().to_string(),
-                format!("{}", h.current_streak).yellow().to_string(),
-                format!("{:.1}%", h.completion_rate()),
-                status.to_string(),
+                Cell::new(h.id.to_string().split('-').next().unwrap_or("").to_string())
+                    .fg(comfy_table::Color::DarkGrey),
+                Cell::new(&h.name).fg(prio_color),
+                Cell::new(h.category.to_string()).fg(comfy_table::Color::Blue),
+                Cell::new(StreakBar::render(h.current_streak, h.longest_streak)),
+                Cell::new(WeeklyProgressBar::render(weekly_done, weekly_target)),
+                Cell::new(format!("{:.0}%", h.completion_rate())),
+                Cell::new(status.to_string()),
             ]);
         }
 
@@ -53,46 +67,106 @@ impl TableFormatter {
     pub fn habit_detail(habit: &Habit) -> String {
         let mut output = String::new();
         
-        output.push_str(&format!("{}\n", "═".repeat(50).cyan()));
-        output.push_str(&format!("  {}\n", habit.name.bold().white()));
-        output.push_str(&format!("{}\n", "═".repeat(50).cyan()));
+        // Header with progress bar for completion rate
+        let rate = habit.completion_rate();
+        let rate_bar = ProgressBar::new(20)
+            .with_chars('█', '░')
+            .with_colors(
+                if rate >= 80.0 { Color::Green } 
+                else if rate >= 50.0 { Color::Yellow } 
+                else { Color::Red },
+                Color::Dimmed
+            );
         
-        output.push_str(&format!("  ID:          {}\n", habit.id));
-        output.push_str(&format!("  Description: {}\n", habit.description));
-        output.push_str(&format!("  Category:    {}\n", habit.category.to_string().cyan()));
-        output.push_str(&format!("  Priority:    {:?}\n", habit.priority));
-        output.push_str(&format!("  Frequency:   {:?}\n", habit.frequency));
-        output.push_str(&format!("  Created:     {}\n", habit.created_at.format("%Y-%m-%d")));
+        output.push_str(&format!("\n{}\n", "╔".to_string() + &"═".repeat(48) + "╗"));
+        output.push_str(&format!("║ {:^46} ║\n", habit.name.white().bold()));
+        output.push_str(&format!("{}\n", "╠".to_string() + &"═".repeat(48) + "╣"));
         
-        let (done, target) = habit.weekly_progress();
-        output.push_str(&format!("  Weekly:      {}/{} completions\n", done, target));
-        output.push_str(&format!("  Streak:      {} (best: {})\n", 
-            habit.current_streak.to_string().yellow().bold(),
-            habit.longest_streak));
-        output.push_str(&format!("  Completion:  {:.1}%\n", habit.completion_rate()));
-        output.push_str(&format!("  Active:      {}\n", 
-            if habit.is_active { "Yes".green() } else { "No".red() }));
+        // Progress section
+        output.push_str(&format!("║ {} {:>36} ║\n", 
+            "Progress:".dimmed(), 
+            rate_bar.render_with_label(rate, "")));
         
+        let (weekly_done, weekly_target) = habit.weekly_progress();
+        let weekly_bar = WeeklyProgressBar::render(weekly_done, weekly_target);
+        output.push_str(&format!("║ {} {:>36} ║\n", "Weekly:".dimmed(), weekly_bar));
+        
+        output.push_str(&format!("║ {} {:>36} ║\n", 
+            "Streak:".dimmed(), 
+            StreakBar::render(habit.current_streak, habit.longest_streak)));
+        
+        output.push_str(&format!("{}\n", "╠".to_string() + &"═".repeat(48) + "╣"));
+        
+        // Details
+        output.push_str(&format!("║  {} {}\n", "ID:".dimmed(), habit.id));
+        output.push_str(&format!("║  {} {}\n", "Description:".dimmed(), habit.description));
+        output.push_str(&format!("║  {} {}\n", "Category:".dimmed(), habit.category.to_string().cyan()));
+        output.push_str(&format!("║  {} {:?}\n", "Priority:".dimmed(), habit.priority));
+        output.push_str(&format!("║  {} {:?}\n", "Frequency:".dimmed(), habit.frequency));
+        output.push_str(&format!("║  {} {}\n", "Created:".dimmed(), habit.created_at.format("%Y-%m-%d")));
+        output.push_str(&format!("║  {} {}/{}\n", "Target:".dimmed(), habit.completions.len(), habit.target_completions));
+        
+        output.push_str(&format!("{}\n", "╠".to_string() + &"═".repeat(48) + "╣"));
+        
+        // Recent completions
         if !habit.completions.is_empty() {
-            output.push_str(&format!("\n  Last 5 completions:\n"));
+            output.push_str(&format!("║  {}\n", "Recent completions:".dimmed()));
             for (i, c) in habit.completions.iter().rev().take(5).enumerate() {
-                output.push_str(&format!("    {}. {}\n", i+1, c.format("%Y-%m-%d %H:%M")));
+                let marker = if i == 0 { "└─►".green() } else { "   ".dimmed() };
+                output.push_str(&format!("║  {} {} {}\n", 
+                    marker, 
+                    c.format("%Y-%m-%d %H:%M").to_string().white(),
+                    if i == 0 { "(latest)".dimmed() } else { "".normal() }));
             }
         }
-
-        output.push_str(&format!("{}\n", "═".repeat(50).cyan()));
+        
+        output.push_str(&format!("{}\n", "╚".to_string() + &"═".repeat(48) + "╝"));
         output
     }
 
-    pub fn stats(stats: &TrackerStats) -> String {
+    pub fn stats(stats: &TrackerStats, habits: &[&Habit]) -> String {
         let mut output = String::new();
-        output.push_str(&format!("{}\n", "📊 Statistics".bold()));
-        output.push_str(&format!("  Total Habits:      {}\n", stats.total_habits));
-        output.push_str(&format!("  Active:            {}\n", stats.active_habits.to_string().green()));
-        output.push_str(&format!("  Completed Today:   {}\n", stats.completed_today.to_string().cyan()));
-        output.push_str(&format!("  This Week:         {}\n", stats.completed_this_week));
-        output.push_str(&format!("  On Streak:         {}\n", stats.current_streaks.to_string().yellow()));
-        output.push_str(&format!("  Avg Completion:    {:.1}%\n", stats.average_completion_rate));
+        
+        // Overall progress
+        let overall = ProgressBar::new(30)
+            .with_chars('▓', '░')
+            .with_colors(Color::Cyan, Color::Dimmed);
+        
+        output.push_str(&format!("\n{}\n", "📊 STATISTICS".bold().underline()));
+        output.push_str(&format!("{}\n\n", overall.render(stats.average_completion_rate)));
+        
+        // Main stats grid
+        output.push_str(&format!("  {} {:>20}\n", "Total Habits:".dimmed(), stats.total_habits));
+        output.push_str(&format!("  {} {:>20}\n", "Active:".dimmed(), stats.active_habits.to_string().green()));
+        output.push_str(&format!("  {} {:>20}\n", "Completed Today:".dimmed(), 
+            if stats.completed_today > 0 { stats.completed_today.to_string().cyan().bold() } else { "0".dimmed() }));
+        output.push_str(&format!("  {} {:>20}\n", "This Week:".dimmed(), stats.completed_this_week));
+        output.push_str(&format!("  {} {:>20}\n", "On Fire (streak):".dimmed(), stats.current_streaks.to_string().yellow()));
+        output.push_str(&format!("  {} {:>20}\n", "Avg Completion:".dimmed(), 
+            format!("{:.1}%", stats.average_completion_rate)));
+        
+        // Category breakdown
+        use std::collections::HashMap;
+        let mut by_cat: HashMap<String, (usize, u32)> = HashMap::new();
+        for h in habits {
+            let entry = by_cat.entry(h.category.to_string()).or_insert((0, 0));
+            entry.0 += 1;
+            entry.1 += h.current_streak;
+        }
+        
+        if !by_cat.is_empty() {
+            output.push_str(&format!("\n{}\n", "By Category:".dimmed().underline()));
+            for (cat, (count, total_streak)) in by_cat {
+                let avg = if count > 0 { total_streak / count as u32 } else { 0 };
+                let bar = ProgressBar::new(15)
+                    .with_chars('█', '░')
+                    .with_colors(Color::Blue, Color::Dimmed);
+                let percent = (count as f64 / habits.len() as f64) * 100.0;
+                output.push_str(&format!("  {:12} {} {:>2} habits (avg streak: {})\n", 
+                    cat, bar.render(percent), count, avg));
+            }
+        }
+        
         output
     }
 
@@ -100,47 +174,88 @@ impl TableFormatter {
         let mut output = String::new();
         let now = chrono::Local::now();
         
-        output.push_str(&format!("\n{}\n", format!("{} Dashboard", now.format("%A, %B %d")).bold()));
-        output.push_str(&format!("{}\n\n", "═".repeat(40).cyan()));
+        let header_bar = ProgressBar::new(40)
+            .with_chars('━', '─')
+            .with_colors(Color::Cyan, Color::Dimmed);
+        
+        output.push_str(&format!("\n{}\n", header_bar.render(100.0)));
+        output.push_str(&format!("{:^50}\n", 
+            format!("📅 {} {}", now.format("%A"), now.format("%B %d")).bold().white()));
+        output.push_str(&format!("{}\n\n", header_bar.render(100.0)));
 
         let due: Vec<_> = habits.iter().filter(|h| h.is_due_today() && !h.is_completed_today()).collect();
         let done: Vec<_> = habits.iter().filter(|h| h.is_completed_today()).collect();
         let upcoming: Vec<_> = habits.iter().filter(|h| !h.is_due_today()).collect();
 
+        // Progress summary
+        let total_active = due.len() + done.len();
+        let progress_pct = if total_active > 0 {
+            (done.len() as f64 / total_active as f64) * 100.0
+        } else {
+            0.0
+        };
+        
+        let summary_bar = ProgressBar::new(25)
+            .with_chars('█', '░')
+            .with_colors(
+                if progress_pct >= 80.0 { Color::Green }
+                else if progress_pct >= 50.0 { Color::Yellow }
+                else { Color::Red },
+                Color::Dimmed
+            );
+        
+        output.push_str(&format!("Daily Progress: {} {:.0}%\n\n", 
+            summary_bar.render(progress_pct), progress_pct));
+
         if !due.is_empty() {
-            output.push_str(&format!("{}\n", "Due Today:".yellow().bold()));
+            output.push_str(&format!("{}\n", "🔥 DUE TODAY".yellow().bold()));
             for h in due {
-                let icon = match h.priority {
-                    Priority::Critical => "Critical",
-                    Priority::High => "High",
-                    _ => "Medium",
+                let urgency = match h.priority {
+                    Priority::Critical => "🔴 CRITICAL",
+                    Priority::High => "🟠 HIGH  ",
+                    Priority::Medium => "🟡 MEDIUM",
+                    Priority::Low => "🟢 LOW   ",
                 };
-                output.push_str(&format!("  {} {} ({} day streak)\n", icon, h.name, h.current_streak));
+                let streak_fire = if h.current_streak > 7 { "🔥🔥" } 
+                    else if h.current_streak > 3 { "🔥" } 
+                    else { "" };
+                output.push_str(&format!("  {} {} {} ({} day streak {})\n", 
+                    "○", urgency, h.name.white(), h.current_streak, streak_fire));
             }
             output.push('\n');
         }
 
         if !done.is_empty() {
-            output.push_str(&format!("{}\n", "Completed:".green().bold()));
+            output.push_str(&format!("{}\n", "✅ COMPLETED".green().bold()));
             for h in done {
-                output.push_str(&format!("  ✓ {} ({}% rate)\n", h.name, h.completion_rate()));
+                let rate_bar = ProgressBar::new(10)
+                    .with_chars('✓', '·')
+                    .with_colors(Color::Green, Color::Dimmed);
+                output.push_str(&format!("  {} {} {} {:.0}%\n", 
+                    "✓".green(), h.name.dimmed(), rate_bar.render(h.completion_rate()), h.completion_rate()));
             }
             output.push('\n');
         }
 
-        let total = due.len() + done.len();
-        let progress = if total > 0 { (done.len() * 100) / total } else { 0 };
-        let bar = Self::progress_bar(progress);
-        output.push_str(&format!("Progress: {} {}%\n\n", bar, progress));
+        if !upcoming.is_empty() && due.is_empty() {
+            output.push_str(&format!("{}\n", "📋 UPCOMING".dimmed()));
+            for h in upcoming.iter().take(3) {
+                output.push_str(&format!("  - {} ({})\n", h.name.dimmed(), format!("{:?}", h.frequency).dimmed()));
+            }
+        }
 
+        // Motivational footer based on progress
+        let footer = if progress_pct >= 100.0 {
+            "🎉 All habits complete! Amazing work!".green().bold()
+        } else if progress_pct >= 50.0 {
+            "💪 More than halfway there! Keep going!".yellow()
+        } else if !due.is_empty() {
+            "🚀 Let's tackle those habits!".cyan()
+        } else {
+            "✨ Ready to start your day!".dimmed()
+        };
+        output.push_str(&format!("\n{}\n", footer));
+        
         output
-    }
-
-    fn progress_bar(percent: usize) -> String {
-        let filled = percent / 10;
-        let empty = 10 - filled;
-        format!("{}{}", 
-            "█".repeat(filled).green(),
-            "░".repeat(empty).dimmed())
     }
 }
