@@ -1,7 +1,22 @@
+use std::collections::HashMap;
+use chrono::{DateTime, Local, Duration, NaiveDate, Weekday};
+use uuid::Uuid;
 
+#[derive(Debug, Clone)]
 struct Habit {
+    id: Uuid,
     name: String,
     description: String,
+    category: HabitCategory,
+    frequency: HabitFrequency,
+    created_at: DateTime<Local>,
+    completions: Vec<DateTime<Local>>,
+    current_streak: u32,
+    longest_streak: u32,
+    target_completions: u32,
+    reminder_time: Option<String>,
+    is_active: bool,
+    priority: Priority,
 }
 
 enum Habits {
@@ -15,6 +30,13 @@ enum HabitFrequency {
     Daily,
     Weekly,
     Monthly,
+}
+
+enum Priority {
+    Critical,
+    High,
+    Medium,
+    Low,
 }
 
 fn create_habit(name: &str, description: &str) -> Habit {
