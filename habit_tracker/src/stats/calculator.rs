@@ -1,6 +1,5 @@
-
-use chrono::{Duration, Local};
 use crate::models::Habit;
+use chrono::{Duration, Local};
 
 #[derive(Debug, Default)]
 pub struct TrackerStats {
@@ -18,7 +17,7 @@ impl StatsCalculator {
     pub fn calculate(habits: &[&Habit]) -> TrackerStats {
         let today = Local::now().date_naive();
         let week_start = Local::now() - Duration::days(7);
-        
+
         let mut stats = TrackerStats {
             total_habits: habits.len() as u32,
             ..Default::default()
@@ -30,18 +29,22 @@ impl StatsCalculator {
             if h.is_active {
                 stats.active_habits += 1;
             }
-            
+
             if h.current_streak > 0 {
                 stats.current_streaks += 1;
             }
 
-            let today_count = h.completions.iter()
+            let today_count = h
+                .completions
+                .iter()
                 .filter(|c| c.date_naive() == today)
                 .count() as u32;
             stats.completed_today += today_count;
 
-            let week_count = h.completions.iter()
-                .filter(|c| *c >= week_start)
+            let week_count = h
+                .completions
+                .iter()
+                .filter(|c| **c >= week_start) // Fixed: dereference
                 .count() as u32;
             stats.completed_this_week += week_count;
 

@@ -1,6 +1,6 @@
+use anyhow::Result;
 use clap::Parser;
 use habit_tracker::cli::{Cli, CommandHandler};
-use anyhow::Result;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();

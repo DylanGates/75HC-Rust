@@ -1,6 +1,6 @@
+use crate::models::{Habit, HabitCategory, HabitError, Priority};
 use std::collections::HashMap;
 use uuid::Uuid;
-use crate::models::{Habit, HabitCategory, HabitFrequency, Priority, HabitError};
 
 pub struct HabitTracker {
     habits: HashMap<Uuid, Habit>,
@@ -30,15 +30,22 @@ impl HabitTracker {
     }
 
     pub fn complete(&mut self, id: Uuid) -> Result<(), HabitError> {
-        self.get_mut(id)
-            .ok_or(HabitError::NotFound)?
-            .complete()
+        self.get_mut(id).ok_or(HabitError::NotFound)?.complete()
     }
 
-    pub fn update(&mut self, id: Uuid, name: Option<&str>, desc: Option<&str>) -> Result<(), HabitError> {
+    pub fn update(
+        &mut self,
+        id: Uuid,
+        name: Option<&str>,
+        desc: Option<&str>,
+    ) -> Result<(), HabitError> {
         let habit = self.get_mut(id).ok_or(HabitError::NotFound)?;
-        if let Some(n) = name { habit.name = n.to_string(); }
-        if let Some(d) = desc { habit.description = d.to_string(); }
+        if let Some(n) = name {
+            habit.name = n.to_string();
+        }
+        if let Some(d) = desc {
+            habit.description = d.to_string();
+        }
         Ok(())
     }
 
@@ -64,7 +71,6 @@ impl HabitTracker {
         Ok(())
     }
 
-    // Queries
     pub fn all(&self) -> Vec<&Habit> {
         self.habits.values().collect()
     }

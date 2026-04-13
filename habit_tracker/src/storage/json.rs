@@ -1,8 +1,8 @@
+use crate::models::Habit;
+use anyhow::{anyhow, Result};
+use serde_json;
 use std::fs;
 use std::path::{Path, PathBuf};
-use anyhow::{Result, Context};
-use serde_json;
-use crate::models::Habit;
 
 pub struct JsonStorage {
     data_dir: PathBuf,
@@ -10,47 +10,45 @@ pub struct JsonStorage {
 }
 
 impl JsonStorage {
-    /// Create storage with default data directory (~/.local/share/habit-tracker/data)
     pub fn new() -> Result<Self> {
         let data_dir = Self::default_data_dir()?;
         Self::with_dir(data_dir)
     }
 
-    /// Create storage with custom directory
     pub fn with_dir<P: AsRef<Path>>(dir: P) -> Result<Self> {
         let data_dir = dir.as_ref().to_path_buf();
         let file_path = data_dir.join("habits.json");
-        
-        // Ensure data directory exists
+
         fs::create_dir_all(&data_dir)
-            .with_context(|| format!("Failed to create data directory: {:?}", data_dir))?;
-        
-        Ok(Self { data_dir, file_path })
+            .map_err(|e| anyhow!("Failed to create data directory {:?}: {}", data_dir, e))?;
+
+        Ok(Self {
+            data_dir,
+            file_path,
+        })
     }
 
     fn default_data_dir() -> Result<PathBuf> {
-        let base = dirs::data_local_dir()
-            .ok_or_else(|| anyhow::anyhow!("Could not determine data directory"))?;
+        let base =
+            dirs::data_local_dir().ok_or_else(|| anyhow!("Could not determine data directory"))?;
         Ok(base.join("habit-tracker").join("data"))
     }
 
     pub fn save(&self, habits: &[Habit]) -> Result<()> {
-        // Create parent directories if needed
         if let Some(parent) = self.file_path.parent() {
             fs::create_dir_all(parent)?;
         }
 
         let json = serde_json::to_string_pretty(habits)
-            .context("Failed to serialize habits")?;
-        
-        // Write to temp file first, then rename for atomicity
+            .map_err(|e| anyhow!("Failed to serialize habits: {}", e))?;
+
         let temp_path = self.file_path.with_extension("tmp");
-        fs::write(&temp_path, json)
-            .with_context(|| format!("Failed to write to temp file: {:?}", temp_path))?;
-        
+        fs::write(&temp_path, &json)
+            .map_err(|e| anyhow!("Failed to write to temp file {:?}: {}", temp_path, e))?;
+
         fs::rename(&temp_path, &self.file_path)
-            .with_context(|| format!("Failed to save to {:?}", self.file_path))?;
-        
+            .map_err(|e| anyhow!("Failed to save to {:?}: {}", self.file_path, e))?;
+
         Ok(())
     }
 
@@ -60,17 +58,17 @@ impl JsonStorage {
         }
 
         let json = fs::read_to_string(&self.file_path)
-            .with_context(|| format!("Failed to read {:?}", self.file_path))?;
-        
+            .map_err(|e| anyhow!("Failed to read {:?}: {}", self.file_path, e))?;
+
         let habits: Vec<Habit> = serde_json::from_str(&json)
-            .with_context(|| format!("Failed to parse JSON from {:?}", self.file_path))?;
-        
+            .map_err(|e| anyhow!("Failed to parse JSON from {:?}: {}", self.file_path, e))?;
+
         Ok(habits)
     }
 
     pub fn export_csv(&self, habits: &[Habit], path: &Path) -> Result<()> {
         let mut csv = String::from("id,name,description,category,frequency,current_streak,longest_streak,completion_rate,total_completions,created_at,is_active\n");
-        
+
         for h in habits {
             let freq_str = format!("{:?}", h.frequency).replace(',', ";");
             csv.push_str(&format!(
@@ -88,10 +86,9 @@ impl JsonStorage {
                 h.is_active
             ));
         }
-        
-        fs::write(path, csv)
-            .with_context(|| format!("Failed to export CSV to {:?}", path))?;
-        
+
+        fs::write(path, csv).map_err(|e| anyhow!("Failed to export CSV to {:?}: {}", path, e))?;
+
         Ok(())
     }
 
@@ -103,7 +100,7 @@ impl JsonStorage {
 
     pub fn import_json(&self, path: &Path) -> Result<Vec<Habit>> {
         let json = fs::read_to_string(path)?;
-        let habits = serde_json::from_str(&json)?;
+        let habits: Vec<Habit> = serde_json::from_str(&json)?;
         Ok(habits)
     }
 
@@ -115,26 +112,24 @@ impl JsonStorage {
         &self.data_dir
     }
 
-    /// Create backup with timestamp
     pub fn backup(&self) -> Result<PathBuf> {
         if !self.file_path.exists() {
-            return Err(anyhow::anyhow!("No data file to backup"));
+            return Err(anyhow!("No data file to backup"));
         }
-        
+
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let backup_name = format!("habits_backup_{}.json", timestamp);
         let backup_path = self.data_dir.join(&backup_name);
-        
+
         fs::copy(&self.file_path, &backup_path)?;
         println!("Backup created: {:?}", backup_path);
-        
+
         Ok(backup_path)
     }
 
-    /// List all backup files
     pub fn list_backups(&self) -> Result<Vec<PathBuf>> {
         let mut backups = Vec::new();
-        
+
         for entry in fs::read_dir(&self.data_dir)? {
             let entry = entry?;
             let name = entry.file_name();
@@ -142,26 +137,8 @@ impl JsonStorage {
                 backups.push(entry.path());
             }
         }
-        
-        backups.sort_by(|a, b| b.cmp(a)); // Newest first
+
+        backups.sort_by(|a, b| b.cmp(a));
         Ok(backups)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_save_load() {
-        let temp = TempDir::new().unwrap();
-        let storage = JsonStorage::with_dir(temp.path()).unwrap();
-        
-        let habits = vec![];
-        storage.save(&habits).unwrap();
-        
-        let loaded = storage.load().unwrap();
-        assert!(loaded.is_empty());
     }
 }

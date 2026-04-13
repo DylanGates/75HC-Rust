@@ -1,2 +1,2 @@
 pub mod calculator;
-pub use calculator::{TrackerStats, StatsCalculator};
+pub use calculator::{StatsCalculator, TrackerStats};

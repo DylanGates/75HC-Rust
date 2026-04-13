@@ -1,5 +1,5 @@
 use colored::*;
-use std::io::{self, Write};
+use std::io::{self, Write}; // Keep this, it's used
 
 pub struct ProgressBar {
     width: usize,
@@ -48,8 +48,12 @@ impl ProgressBar {
         let filled_count = ((clamped / 100.0) * self.width as f64).round() as usize;
         let empty_count = self.width.saturating_sub(filled_count);
 
-        let filled_str: String = std::iter::repeat(self.filled_char).take(filled_count).collect();
-        let empty_str: String = std::iter::repeat(self.empty_char).take(empty_count).collect();
+        let filled_str: String = std::iter::repeat(self.filled_char)
+            .take(filled_count)
+            .collect();
+        let empty_str: String = std::iter::repeat(self.empty_char)
+            .take(empty_count)
+            .collect();
 
         format!(
             "{}{} {:.1}%",
@@ -68,10 +72,10 @@ impl ProgressBar {
             Color::Cyan => text.cyan(),
             Color::White => text.white(),
             Color::Dimmed => text.dimmed(),
-        }.to_string()
+        }
+        .to_string()
     }
 
-    /// Render with animation for CLI feedback
     pub fn render_with_label(&self, percent: f64, label: &str) -> String {
         format!("{} {}", self.render(percent), label)
     }
@@ -84,13 +88,13 @@ impl StreakBar {
         let bar = ProgressBar::new(10)
             .with_chars('🔥', '○')
             .with_colors(Color::Yellow, Color::Dimmed);
-        
+
         let percent = if best > 0 {
             (streak as f64 / best as f64) * 100.0
         } else {
             0.0
         };
-        
+
         format!("{} {} (best: {})", bar.render(percent), streak, best)
     }
 }
@@ -99,16 +103,12 @@ pub struct WeeklyProgressBar;
 
 impl WeeklyProgressBar {
     pub fn render(current: u32, target: u32) -> String {
-        let bar = ProgressBar::new(8)
-            .with_chars('✓', '·')
-            .with_colors(Color::Green, Color::Dimmed);
-        
         let percent = if target > 0 {
             (current as f64 / target as f64) * 100.0
         } else {
             0.0
         };
-        
+
         let color = if percent >= 100.0 {
             Color::Green
         } else if percent >= 50.0 {
@@ -116,11 +116,11 @@ impl WeeklyProgressBar {
         } else {
             Color::Red
         };
-        
+
         let bar = ProgressBar::new(8)
             .with_chars('█', '░')
             .with_colors(color, Color::Dimmed);
-        
+
         format!("{}/{} {}", current, target, bar.render(percent.min(100.0)))
     }
 }

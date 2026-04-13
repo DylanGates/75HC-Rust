@@ -1,9 +1,9 @@
-use chrono::{DateTime, Duration, Local, Weekday};
+use super::{HabitCategory, HabitFrequency};
+use chrono::{DateTime, Datelike, Duration, Local}; // Added Datelike
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use super::{HabitCategory, HabitFrequency};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)] // Added PartialOrd, Ord
 pub enum Priority {
     Low,
     Medium,
@@ -58,11 +58,11 @@ impl Habit {
         if !self.is_active {
             return Err(HabitError::InactiveHabit);
         }
-        
+
         if self.is_completed_today() {
             return Err(HabitError::AlreadyCompleted);
         }
-        
+
         self.completions.push(Local::now());
         self.update_streak();
         Ok(())
@@ -76,10 +76,9 @@ impl Habit {
     fn update_streak(&mut self) {
         let today = Local::now().date_naive();
         let yesterday = today - Duration::days(1);
-        
-        let completed_yesterday = self.completions.iter()
-            .any(|c| c.date_naive() == yesterday);
-        
+
+        let completed_yesterday = self.completions.iter().any(|c| c.date_naive() == yesterday);
+
         if completed_yesterday || self.current_streak == 0 {
             self.current_streak += 1;
             self.longest_streak = self.longest_streak.max(self.current_streak);
@@ -96,22 +95,24 @@ impl Habit {
             HabitFrequency::Monthly { .. } => days / 30.0,
             HabitFrequency::Custom { interval_days } => days / *interval_days as f64,
         };
-        
+
         (self.completions.len() as f64 / expected) * 100.0
     }
 
     pub fn weekly_progress(&self) -> (u32, u32) {
         let week_start = Local::now() - Duration::days(7);
-        let count = self.completions.iter()
-            .filter(|c| *c >= week_start)
+        let count = self
+            .completions
+            .iter()
+            .filter(|c| **c >= week_start) // Fixed: dereference
             .count() as u32;
-        
+
         (count, self.frequency.expected_per_week())
     }
 
     pub fn is_due_today(&self) -> bool {
         let now = Local::now();
-        self.is_active 
+        self.is_active
             && !self.is_completed_today()
             && self.frequency.is_due_today(now.weekday(), now.day())
     }

@@ -6,4 +6,4 @@ pub mod progress;
 pub use args::Cli;
 pub use commands::CommandHandler;
 pub use display::TableFormatter;
-pub use progress::{ProgressBar, StreakBar, WeeklyProgressBar, Color};
+pub use progress::{Color, ProgressBar, StreakBar, WeeklyProgressBar};
