@@ -27,6 +27,10 @@ struct Args {
     /// Exclude ambiguous characters (l, 1, O, 0, etc.)
     #[arg(short, long, default_value_t = false)]
     exclude_ambiguous: bool,
+
+    /// Custom special characters
+    #[arg(short, long)]
+    custom_special: Option<String>,
 }
 
 fn main() {
@@ -42,7 +46,11 @@ fn main() {
         charset.push_str("0123456789");
     }
     if args.special {
-        charset.push_str("!@#$%^&*()-_=+[]{}|;:,.<>?");
+        if let Some(ref custom) = args.custom_special {
+            charset.push_str(custom);
+        } else {
+            charset.push_str("!@#$%^&*()-_=+[]{}|;:,.<>?");
+        }
     }
 
     if args.exclude_ambiguous {
