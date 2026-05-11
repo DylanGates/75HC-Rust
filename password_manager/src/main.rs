@@ -43,6 +43,10 @@ struct Args {
     /// Number of passwords to generate
     #[arg(short, long, default_value_t = 1)]
     count: usize,
+
+    /// Show password entropy
+    #[arg(short, long, default_value_t = false)]
+    entropy: bool,
 }
 
 fn main() {
@@ -84,6 +88,10 @@ fn main() {
         return;
     }
 
+    let charset_size = charset.chars().count();
+    let entropy_per_char = (charset_size as f64).log2();
+    let total_entropy = entropy_per_char * args.length as f64;
+
     let mut rng = rand::thread_rng();
 
     for _ in 0..args.count {
@@ -102,6 +110,11 @@ fn main() {
                 break;
             }
         }
-        println!("{}", password);
+        
+        if args.entropy {
+            println!("{} [Entropy: {:.2} bits]", password, total_entropy);
+        } else {
+            println!("{}", password);
+        }
     }
 }
