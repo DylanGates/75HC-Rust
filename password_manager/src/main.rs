@@ -23,6 +23,10 @@ struct Args {
     /// Include special characters
     #[arg(short, long, default_value_t = false)]
     special: bool,
+
+    /// Exclude ambiguous characters (l, 1, O, 0, etc.)
+    #[arg(short, long, default_value_t = false)]
+    exclude_ambiguous: bool,
 }
 
 fn main() {
@@ -39,6 +43,11 @@ fn main() {
     }
     if args.special {
         charset.push_str("!@#$%^&*()-_=+[]{}|;:,.<>?");
+    }
+
+    if args.exclude_ambiguous {
+        let ambiguous = "l1O0I|";
+        charset.retain(|c| !ambiguous.contains(c));
     }
     
     let mut rng = rand::thread_rng();
