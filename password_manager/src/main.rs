@@ -11,11 +11,18 @@ struct Args {
     /// Include uppercase letters
     #[arg(short, long, default_value_t = true)]
     uppercase: bool,
+
+    /// Include lowercase letters
+    #[arg(short, long, default_value_t = true)]
+    lowercase: bool,
 }
 
 fn main() {
     let args = Args::parse();
-    let mut charset = String::from("abcdefghijklmnopqrstuvwxyz0123456789");
+    let mut charset = String::from("0123456789");
+    if args.lowercase {
+        charset.push_str("abcdefghijklmnopqrstuvwxyz");
+    }
     if args.uppercase {
         charset.push_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
     }
