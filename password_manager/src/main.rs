@@ -7,11 +7,19 @@ struct Args {
     /// Length of the password
     #[arg(short, long, default_value_t = 12)]
     length: usize,
+
+    /// Include uppercase letters
+    #[arg(short, long, default_value_t = true)]
+    uppercase: bool,
 }
 
 fn main() {
     let args = Args::parse();
-    let charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let mut charset = String::from("abcdefghijklmnopqrstuvwxyz0123456789");
+    if args.uppercase {
+        charset.push_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    }
+    
     let mut rng = rand::thread_rng();
     let password: String = (0..args.length)
         .map(|_| {
