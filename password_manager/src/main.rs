@@ -95,21 +95,20 @@ fn main() {
     let mut rng = rand::thread_rng();
 
     for _ in 0..args.count {
-        let mut password = String::new();
-        loop {
-            password = (0..args.length)
+        let password = loop {
+            let candidate: String = (0..args.length)
                 .map(|_| {
                     let idx = rng.gen_range(0..charset.len());
                     charset.chars().nth(idx).unwrap()
                 })
                 .collect();
 
-            let digit_count = password.chars().filter(|c| digit_set.contains(*c)).count();
-            let special_count = password.chars().filter(|c| special_set.contains(*c)).count();
+            let digit_count = candidate.chars().filter(|c| digit_set.contains(*c)).count();
+            let special_count = candidate.chars().filter(|c| special_set.contains(*c)).count();
             if digit_count >= args.min_digits && special_count >= args.min_special {
-                break;
+                break candidate;
             }
-        }
+        };
         
         if args.entropy {
             println!("{} [Entropy: {:.2} bits]", password, total_entropy);
