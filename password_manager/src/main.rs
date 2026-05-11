@@ -39,6 +39,10 @@ struct Args {
     /// Minimum number of special characters
     #[arg(long, default_value_t = 0)]
     min_special: usize,
+
+    /// Number of passwords to generate
+    #[arg(short, long, default_value_t = 1)]
+    count: usize,
 }
 
 fn main() {
@@ -81,22 +85,23 @@ fn main() {
     }
 
     let mut rng = rand::thread_rng();
-    let mut password = String::new();
 
-    loop {
-        password = (0..args.length)
-            .map(|_| {
-                let idx = rng.gen_range(0..charset.len());
-                charset.chars().nth(idx).unwrap()
-            })
-            .collect();
+    for _ in 0..args.count {
+        let mut password = String::new();
+        loop {
+            password = (0..args.length)
+                .map(|_| {
+                    let idx = rng.gen_range(0..charset.len());
+                    charset.chars().nth(idx).unwrap()
+                })
+                .collect();
 
-        let digit_count = password.chars().filter(|c| digit_set.contains(*c)).count();
-        let special_count = password.chars().filter(|c| special_set.contains(*c)).count();
-        if digit_count >= args.min_digits && special_count >= args.min_special {
-            break;
+            let digit_count = password.chars().filter(|c| digit_set.contains(*c)).count();
+            let special_count = password.chars().filter(|c| special_set.contains(*c)).count();
+            if digit_count >= args.min_digits && special_count >= args.min_special {
+                break;
+            }
         }
+        println!("{}", password);
     }
-
-    println!("{}", password);
 }
