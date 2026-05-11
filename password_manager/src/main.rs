@@ -35,12 +35,17 @@ struct Args {
     /// Minimum number of digits
     #[arg(long, default_value_t = 0)]
     min_digits: usize,
+
+    /// Minimum number of special characters
+    #[arg(long, default_value_t = 0)]
+    min_special: usize,
 }
 
 fn main() {
     let args = Args::parse();
     let mut charset = String::new();
     let mut digit_set = String::new();
+    let mut special_set = String::new();
     
     if args.lowercase {
         charset.push_str("abcdefghijklmnopqrstuvwxyz");
@@ -54,17 +59,20 @@ fn main() {
         digit_set.push_str(digits);
     }
     if args.special {
-        if let Some(ref custom) = args.custom_special {
-            charset.push_str(custom);
+        let specials = if let Some(ref custom) = args.custom_special {
+            custom.as_str()
         } else {
-            charset.push_str("!@#$%^&*()-_=+[]{}|;:,.<>?");
-        }
+            "!@#$%^&*()-_=+[]{}|;:,.<>?"
+        };
+        charset.push_str(specials);
+        special_set.push_str(specials);
     }
 
     if args.exclude_ambiguous {
         let ambiguous = "l1O0I|";
         charset.retain(|c| !ambiguous.contains(c));
         digit_set.retain(|c| !ambiguous.contains(c));
+        special_set.retain(|c| !ambiguous.contains(c));
     }
 
     if charset.is_empty() {
@@ -84,7 +92,8 @@ fn main() {
             .collect();
 
         let digit_count = password.chars().filter(|c| digit_set.contains(*c)).count();
-        if digit_count >= args.min_digits {
+        let special_count = password.chars().filter(|c| special_set.contains(*c)).count();
+        if digit_count >= args.min_digits && special_count >= args.min_special {
             break;
         }
     }
