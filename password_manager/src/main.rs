@@ -15,16 +15,23 @@ struct Args {
     /// Include lowercase letters
     #[arg(short, long, default_value_t = true)]
     lowercase: bool,
+
+    /// Include numeric characters
+    #[arg(short, long, default_value_t = true)]
+    numbers: bool,
 }
 
 fn main() {
     let args = Args::parse();
-    let mut charset = String::from("0123456789");
+    let mut charset = String::new();
     if args.lowercase {
         charset.push_str("abcdefghijklmnopqrstuvwxyz");
     }
     if args.uppercase {
         charset.push_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    }
+    if args.numbers {
+        charset.push_str("0123456789");
     }
     
     let mut rng = rand::thread_rng();
