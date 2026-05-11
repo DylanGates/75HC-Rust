@@ -31,11 +31,17 @@ struct Args {
     /// Custom special characters
     #[arg(short, long)]
     custom_special: Option<String>,
+
+    /// Minimum number of digits
+    #[arg(long, default_value_t = 0)]
+    min_digits: usize,
 }
 
 fn main() {
     let args = Args::parse();
     let mut charset = String::new();
+    let mut digit_set = String::new();
+    
     if args.lowercase {
         charset.push_str("abcdefghijklmnopqrstuvwxyz");
     }
@@ -43,7 +49,9 @@ fn main() {
         charset.push_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
     }
     if args.numbers {
-        charset.push_str("0123456789");
+        let digits = "0123456789";
+        charset.push_str(digits);
+        digit_set.push_str(digits);
     }
     if args.special {
         if let Some(ref custom) = args.custom_special {
@@ -56,15 +64,30 @@ fn main() {
     if args.exclude_ambiguous {
         let ambiguous = "l1O0I|";
         charset.retain(|c| !ambiguous.contains(c));
+        digit_set.retain(|c| !ambiguous.contains(c));
     }
-    
+
+    if charset.is_empty() {
+        eprintln!("Error: Character set is empty. Please enable at least one character type.");
+        return;
+    }
+
     let mut rng = rand::thread_rng();
-    let password: String = (0..args.length)
-        .map(|_| {
-            let idx = rng.gen_range(0..charset.len());
-            charset.chars().nth(idx).unwrap()
-        })
-        .collect();
+    let mut password = String::new();
+
+    loop {
+        password = (0..args.length)
+            .map(|_| {
+                let idx = rng.gen_range(0..charset.len());
+                charset.chars().nth(idx).unwrap()
+            })
+            .collect();
+
+        let digit_count = password.chars().filter(|c| digit_set.contains(*c)).count();
+        if digit_count >= args.min_digits {
+            break;
+        }
+    }
 
     println!("{}", password);
 }
