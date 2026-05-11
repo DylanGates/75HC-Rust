@@ -19,6 +19,10 @@ struct Args {
     /// Include numeric characters
     #[arg(short, long, default_value_t = true)]
     numbers: bool,
+
+    /// Include special characters
+    #[arg(short, long, default_value_t = false)]
+    special: bool,
 }
 
 fn main() {
@@ -32,6 +36,9 @@ fn main() {
     }
     if args.numbers {
         charset.push_str("0123456789");
+    }
+    if args.special {
+        charset.push_str("!@#$%^&*()-_=+[]{}|;:,.<>?");
     }
     
     let mut rng = rand::thread_rng();
