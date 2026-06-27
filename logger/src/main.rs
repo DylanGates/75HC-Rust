@@ -1,159 +1,15 @@
-use serde::{Deserialize, Serialize};
-use serde_json;
-use std::fs::{self, File};
-use std::io;
-use std::io::{Read, Write};
 use chrono::{DateTime, Utc};
-use colored::*;
 use clap::{Parser, Subcommand};
-use std::time::Instant;
-use std::thread;
+use colored::*;
+use serde::{Deserialize, Serialize};
+use std::fs::{self, File};
+use std::io::{self, BufRead, BufReader, Write};
 use std::sync::mpsc;
-use tiny_http::{Server, Response};
+use std::thread;
+use std::time::Instant;
+use tiny_http::{Response, Server};
 
-#[derive(Parser)]
-#[command(name = "logger")]
-#[command(about = "A simple logging utility with timestamps")]
-struct Cli {
-    #[command(subcommand)]
-    command: Option<Commands>,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Write a log message
-    Write {
-        /// Log level (info, warn, error, debug)
-        #[arg(short, long, default_value = "info")]
-        level: String,
-        /// Log message
-        message: String,
-    },
-    /// Read logs with optional filtering
-    Read {
-        /// Filter by log level
-        #[arg(short, long)]
-        level: Option<String>,
-        /// Search for keyword
-        #[arg(short, long)]
-        search: Option<String>,
-    },
-    /// Show log statistics
-    Stats,
-    /// Export logs to file
-    Export {
-        /// Export format (csv, txt)
-        #[arg(short, long, default_value = "csv")]
-        format: String,
-    },
-}
-
-const LOG_FILE_PATH: &str = "log.json";
-const MAX_LOG_SIZE: u64 = 1024 * 1024; // 1MB
-
-#[derive(Parser)]
-#[command(name = "logger")]
-#[command(about = "A simple logging utility with timestamps")]
-struct Cli {
-    #[command(subcommand)]
-    command: Option<Commands>,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Write a log message
-    Write {
-        /// Log level (info, warn, error, debug)
-        #[arg(short, long, default_value = "info")]
-        level: String,
-        /// Log message
-        message: String,
-    },
-    /// Read logs with optional filtering
-    Read {
-        /// Filter by log level
-        #[arg(short, long)]
-        level: Option<String>,
-        /// Search for keyword
-        #[arg(short, long)]
-        search: Option<String>,
-    },
-    /// Show log statistics
-    Stats,
-    /// Export logs to file
-    Export {
-        /// Export format (csv, txt)
-        #[arg(short, long, default_value = "csv")]
-        format: String,
-    },
-}
-
-fn main() {
-    let cli = Cli::parse();
-
-    match cli.command {
-        Some(Commands::Write { level, message }) => {
-            let log_level = match level.to_lowercase().as_str() {
-                "info" => LogLevel::INFO,
-                "warn" => LogLevel::WARN,
-                "error" => LogLevel::ERROR,
-                "debug" => LogLevel::DEBUG,
-                _ => {
-                    eprintln!("Invalid log level: {}", level);
-                    std::process::exit(1);
-                }
-            };
-            log_message(log_level, &message);
-            println!("{} log written.", level.to_uppercase());
-        }
-        Some(Commands::Read { level, search }) => {
-            if let Some(keyword) = search {
-                search_logs(&keyword);
-            } else if let Some(level_str) = level {
-                let log_level = match level_str.to_lowercase().as_str() {
-                    "info" => Some(LogLevel::INFO),
-                    "warn" => Some(LogLevel::WARN),
-                    "error" => Some(LogLevel::ERROR),
-                    "debug" => Some(LogLevel::DEBUG),
-                    _ => {
-                        eprintln!("Invalid log level: {}", level_str);
-                        std::process::exit(1);
-                    }
-                };
-                read_logs_filtered(log_level);
-            } else {
-                read_logs_filtered(None);
-            }
-        }
-        Some(Commands::Stats) => {
-            show_log_statistics();
-        }
-        Some(Commands::Export { format }) => {
-            if let Err(e) = export_logs(&format) {
-                eprintln!("Failed to export logs: {}", e);
-                std::process::exit(1);
-            }
-        }
-        None => {
-            // Interactive mode
-            run_interactive_mode();
-        }
-    }
-}
-
-fn run_interactive_mode() {
-    if let Ok(metadata) = fs::metadata(LOG_FILE_PATH) {
-        if metadata.len() > MAX_LOG_SIZE {
-            let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-            let backup_path = format!("log_backup_{}.json", timestamp);
-            fs::rename(LOG_FILE_PATH, backup_path)?;
-            println!("Log file rotated to: {}", backup_path);
-        }
-    }
-    Ok(())
-}
-
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 enum LogLevel {
     INFO,
     WARN,
@@ -161,701 +17,514 @@ enum LogLevel {
     DEBUG,
 }
 
-#[derive(Serialize, Deserialize)]
+impl LogLevel {
+    fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "info" => Some(LogLevel::INFO),
+            "warn" => Some(LogLevel::WARN),
+            "error" => Some(LogLevel::ERROR),
+            "debug" => Some(LogLevel::DEBUG),
+            _ => None,
+        }
+    }
+
+    fn colored(&self) -> ColoredString {
+        match self {
+            LogLevel::INFO => "INFO".green(),
+            LogLevel::WARN => "WARN".yellow(),
+            LogLevel::ERROR => "ERROR".red(),
+            LogLevel::DEBUG => "DEBUG".blue(),
+        }
+    }
+
+    fn as_str(&self) -> &'static str {
+        match self {
+            LogLevel::INFO => "INFO",
+            LogLevel::WARN => "WARN",
+            LogLevel::ERROR => "ERROR",
+            LogLevel::DEBUG => "DEBUG",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct LogEntry {
     timestamp: DateTime<Utc>,
     level: LogLevel,
     message: String,
 }
 
-fn log_message(level: LogLevel, message: &str) {
-    if let Err(e) = rotate_log_if_needed() {
-        eprintln!("Failed to rotate log: {}", e);
-    }
-
-    let log_entry = LogEntry {
-        timestamp: Utc::now(),
-        level,
-        message: message.to_string(),
-    };
-
-    let log_json = serde_json::to_string(&log_entry).expect("Failed to serialize log entry");
-
-    let mut file = File::options()
-        .append(true)
-        .create(true)
-        .open(LOG_FILE_PATH)
-        .expect("Failed to open log file");
-
-    writeln!(file, "{}", log_json).expect("Failed to write log entry");
+#[derive(Parser)]
+#[command(name = "logger", about = "A logging utility with timestamps")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
 }
 
-fn start_web_server(port: u16) -> io::Result<()> {
-    let server = Server::http(format!("127.0.0.1:{}", port))
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    
-    println!("🌐 Web interface started at http://127.0.0.1:{}", port);
-    println!("Press Ctrl+C to stop the server");
-    
-    for request in server.incoming_requests() {
-        match request.url() {
-            "/" => {
-                let html = generate_html_page();
-                let response = Response::from_string(html)
-                    .with_header(tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html"[..]).unwrap());
-                request.respond(response)?;
-            }
-            "/api/logs" => {
-                let logs = get_logs_as_json();
-                let response = Response::from_string(logs)
-                    .with_header(tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
-                request.respond(response)?;
-            }
-            "/api/stats" => {
-                let stats = get_stats_as_json();
-                let response = Response::from_string(stats)
-                    .with_header(tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap());
-                request.respond(response)?;
-            }
-            _ => {
-                let response = Response::from_string("404 Not Found").with_status_code(404);
-                request.respond(response)?;
+#[derive(Subcommand)]
+enum Commands {
+    Write {
+        #[arg(short, long, default_value = "info")]
+        level: String,
+        message: String,
+    },
+    Read {
+        #[arg(short, long)]
+        level: Option<String>,
+        #[arg(short, long)]
+        search: Option<String>,
+    },
+    Stats,
+    Export {
+        #[arg(short, long, default_value = "csv")]
+        format: String,
+    },
+    Serve {
+        #[arg(short, long, default_value_t = 8080)]
+        port: u16,
+    },
+    Interactive,
+}
+
+const LOG_FILE: &str = "log.json";
+const MAX_LOG_SIZE: u64 = 1_048_576; // 1 MB
+
+// ── Log I/O ─────────────────────────────────────────────────────────────────
+
+fn read_all_entries() -> Vec<LogEntry> {
+    let file = match File::open(LOG_FILE) {
+        Ok(f) => f,
+        Err(_) => return Vec::new(),
+    };
+    let reader = BufReader::new(file);
+    let mut entries = Vec::new();
+    for line in reader.lines() {
+        if let Ok(line) = line {
+            if !line.trim().is_empty() {
+                if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
+                    entries.push(entry);
+                }
             }
         }
     }
-    
+    entries
+}
+
+fn append_entry(entry: &LogEntry) -> io::Result<()> {
+    let mut file = File::options().append(true).create(true).open(LOG_FILE)?;
+    writeln!(file, "{}", serde_json::to_string(entry).unwrap())?;
     Ok(())
 }
 
-fn generate_html_page() -> String {
-    format!(r#"<!DOCTYPE html>
+fn rotate_if_needed() -> io::Result<()> {
+    if let Ok(meta) = fs::metadata(LOG_FILE) {
+        if meta.len() > MAX_LOG_SIZE {
+            let ts = Utc::now().format("%Y%m%d_%H%M%S");
+            let backup = format!("log_backup_{}.json", ts);
+            fs::rename(LOG_FILE, &backup)?;
+            println!("Log rotated to: {}", backup);
+        }
+    }
+    Ok(())
+}
+
+// ── CLI Commands ─────────────────────────────────────────────────────────────
+
+fn cmd_write(level_str: &str, message: &str) {
+    let level = match LogLevel::from_str(level_str) {
+        Some(l) => l,
+        None => {
+            eprintln!("Invalid log level: {}", level_str);
+            std::process::exit(1);
+        }
+    };
+    rotate_if_needed().ok();
+    let entry = LogEntry { timestamp: Utc::now(), level, message: message.to_string() };
+    match append_entry(&entry) {
+        Ok(_) => println!("{} log written.", entry.level.as_str()),
+        Err(e) => eprintln!("Failed to write log: {}", e),
+    }
+}
+
+fn cmd_read(level_filter: Option<&str>, keyword: Option<&str>) {
+    let entries = read_all_entries();
+    if entries.is_empty() {
+        println!("No logs found.");
+        return;
+    }
+
+    let filtered: Vec<&LogEntry> = entries
+        .iter()
+        .filter(|e| {
+            let level_match = match level_filter {
+                Some(l) => LogLevel::from_str(l)
+                    .map(|lf| std::mem::discriminant(&e.level) == std::mem::discriminant(&lf))
+                    .unwrap_or(true),
+                None => true,
+            };
+            let keyword_match = match keyword {
+                Some(k) => e.message.to_lowercase().contains(&k.to_lowercase()),
+                None => true,
+            };
+            level_match && keyword_match
+        })
+        .collect();
+
+    if filtered.is_empty() {
+        println!("No matching logs found.");
+        return;
+    }
+
+    for entry in &filtered {
+        println!(
+            "[{}] [{}] {}",
+            format!("{}", entry.timestamp.format("%Y-%m-%d %H:%M:%S")).dimmed(),
+            entry.level.colored(),
+            entry.message
+        );
+    }
+}
+
+fn cmd_stats() {
+    let entries = read_all_entries();
+    if entries.is_empty() {
+        println!("No logs to analyze.");
+        return;
+    }
+
+    let total = entries.len();
+    let mut counts = std::collections::HashMap::new();
+    let mut earliest = None;
+    let mut latest = None;
+
+    for e in &entries {
+        *counts.entry(e.level.as_str()).or_insert(0) += 1;
+        if earliest.is_none() || e.timestamp < earliest.unwrap() {
+            earliest = Some(e.timestamp);
+        }
+        if latest.is_none() || e.timestamp > latest.unwrap() {
+            latest = Some(e.timestamp);
+        }
+    }
+
+    println!("{}", "📊 Log Statistics:".bold());
+    println!("  Total logs: {}", total);
+    for level in &["INFO", "WARN", "ERROR", "DEBUG"] {
+        let n = counts.get(level).unwrap_or(&0);
+        println!("  {}: {} ({:.1}%)", level, n, (*n as f64 / total as f64) * 100.0);
+    }
+    if let (Some(e), Some(l)) = (earliest, latest) {
+        println!("  Range: {} → {}",
+            e.format("%Y-%m-%d %H:%M:%S"),
+            l.format("%Y-%m-%d %H:%M:%S"));
+    }
+}
+
+fn cmd_export(format: &str) {
+    let entries = read_all_entries();
+    if entries.is_empty() {
+        println!("No logs to export.");
+        return;
+    }
+
+    let ts = Utc::now().format("%Y%m%d_%H%M%S");
+    let filename = format!("logs_export_{}.{}", ts, format);
+    let mut file = match File::create(&filename) {
+        Ok(f) => f,
+        Err(e) => { eprintln!("Failed to create export file: {}", e); return; }
+    };
+
+    match format {
+        "csv" => {
+            writeln!(file, "timestamp,level,message").ok();
+            for e in &entries {
+                writeln!(file, "{},{},\"{}\"",
+                    e.timestamp.format("%Y-%m-%d %H:%M:%S"),
+                    e.level.as_str(),
+                    e.message.replace('"', "\"\""),
+                ).ok();
+            }
+        }
+        "txt" => {
+            for e in &entries {
+                writeln!(file, "[{}] [{}] {}",
+                    e.timestamp.format("%Y-%m-%d %H:%M:%S"),
+                    e.level.as_str(),
+                    e.message,
+                ).ok();
+            }
+        }
+        _ => { eprintln!("Unsupported format: {}", format); return; }
+    }
+    println!("Exported {} logs to: {}", entries.len(), filename);
+}
+
+// ── Web Server ───────────────────────────────────────────────────────────────
+
+fn cmd_serve(port: u16) {
+    let addr = format!("127.0.0.1:{}", port);
+    let server = match Server::http(&addr) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("Failed to start server: {}", e); return; }
+    };
+    println!("🌐 Web interface at http://{}", addr);
+    println!("Press Ctrl+C to stop.");
+
+    for request in server.incoming_requests() {
+        let response = match request.url() {
+            "/" => {
+                let html = web_page_html();
+                Response::from_string(html)
+                    .with_header(tiny_http::Header::from_bytes(b"Content-Type", b"text/html").unwrap())
+            }
+            "/api/logs" => {
+                let entries = read_all_entries();
+                let json = serde_json::to_string_pretty(&entries).unwrap_or_else(|_| "[]".into());
+                Response::from_string(json)
+                    .with_header(tiny_http::Header::from_bytes(b"Content-Type", b"application/json").unwrap())
+            }
+            "/api/stats" => {
+                let stats = compute_stats_json();
+                Response::from_string(stats)
+                    .with_header(tiny_http::Header::from_bytes(b"Content-Type", b"application/json").unwrap())
+            }
+            _ => {
+                Response::from_string("404 Not Found").with_status_code(404)
+            }
+        };
+        request.respond(response).ok();
+    }
+}
+
+fn compute_stats_json() -> String {
+    let entries = read_all_entries();
+    let total = entries.len();
+    let mut counts = std::collections::HashMap::new();
+    for e in &entries {
+        *counts.entry(e.level.as_str()).or_insert(0) += 1;
+    }
+    let obj = serde_json::json!({
+        "total_logs": total,
+        "info_count": counts.get("INFO").unwrap_or(&0),
+        "warn_count": counts.get("WARN").unwrap_or(&0),
+        "error_count": counts.get("ERROR").unwrap_or(&0),
+        "debug_count": counts.get("DEBUG").unwrap_or(&0),
+    });
+    serde_json::to_string_pretty(&obj).unwrap_or_else(|_| "{}".into())
+}
+
+fn web_page_html() -> String {
+    r#"<!DOCTYPE html>
 <html>
 <head>
     <title>Logger Web Interface</title>
     <style>
-        body {{ font-family: Arial, sans-serif; margin: 20px; }}
-        .log-entry {{ margin: 5px 0; padding: 5px; border-left: 3px solid; }}
-        .INFO {{ border-left-color: green; }}
-        .WARN {{ border-left-color: orange; }}
-        .ERROR {{ border-left-color: red; }}
-        .DEBUG {{ border-left-color: blue; }}
-        button {{ margin: 5px; padding: 10px; }}
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 20px; max-width: 800px; }
+        .log-entry { margin: 5px 0; padding: 5px; border-left: 3px solid #ccc; }
+        .INFO { border-left-color: #4caf50; }
+        .WARN { border-left-color: #ff9800; }
+        .ERROR { border-left-color: #f44336; }
+        .DEBUG { border-left-color: #2196f3; }
+        button { margin: 4px; padding: 8px 14px; cursor: pointer; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 4px; }
     </style>
 </head>
 <body>
     <h1>📝 Logger Web Interface</h1>
-    
     <div>
-        <button onclick="loadLogs()">Load All Logs</button>
-        <button onclick="loadStats()">Load Statistics</button>
-        <button onclick="clearLogs()">Clear Display</button>
+        <button onclick="loadLogs()">Load Logs</button>
+        <button onclick="loadStats()">Stats</button>
+        <button onclick="clearDisplay()">Clear</button>
     </div>
-    
     <h2>Statistics</h2>
-    <div id="stats"></div>
-    
+    <div id="stats"><pre>Loading...</pre></div>
     <h2>Logs</h2>
     <div id="logs"></div>
-    
     <script>
-        async function loadLogs() {{
-            const response = await fetch('/api/logs');
-            const logs = await response.json();
-            displayLogs(logs);
-        }}
-        
-        async function loadStats() {{
-            const response = await fetch('/api/stats');
-            const stats = await response.json();
-            displayStats(stats);
-        }}
-        
-        function displayLogs(logs) {{
-            const container = document.getElementById('logs');
-            container.innerHTML = '';
-            logs.forEach(log => {{
-                const div = document.createElement('div');
-                div.className = `log-entry ${{log.level}}`;
-                div.textContent = `[${{log.timestamp}}] [${{log.level}}] ${{log.message}}`;
-                container.appendChild(div);
-            }});
-        }}
-        
-        function displayStats(stats) {{
-            const container = document.getElementById('stats');
-            container.innerHTML = `<pre>${{JSON.stringify(stats, null, 2)}}</pre>`;
-        }}
-        
-        function clearLogs() {{
-            document.getElementById('logs').innerHTML = '';
-            document.getElementById('stats').innerHTML = '';
-        }}
-        
-        // Load logs on page load
-        loadLogs();
-        loadStats();
+        async function loadLogs() { const r = await fetch('/api/logs'); displayLogs(await r.json()); }
+        async function loadStats() { const r = await fetch('/api/stats'); document.getElementById('stats').innerHTML = '<pre>' + JSON.stringify(await r.json(), null, 2) + '</pre>'; }
+        function displayLogs(logs) { const c = document.getElementById('logs'); c.innerHTML = ''; logs.forEach(l => { const d = document.createElement('div'); d.className = 'log-entry ' + l.level; d.textContent = '[' + l.timestamp + '] [' + l.level + '] ' + l.message; c.appendChild(d); }); }
+        function clearDisplay() { document.getElementById('logs').innerHTML = ''; document.getElementById('stats').innerHTML = ''; }
+        loadLogs(); loadStats();
     </script>
 </body>
-</html>"#)
+</html>"#.into()
 }
 
-fn get_logs_as_json() -> String {
-    let mut file = match File::open(LOG_FILE_PATH) {
-        Ok(file) => file,
-        Err(_) => return "[]".to_string(),
-    };
+// ── Parallel Processing / Archive / Performance ──────────────────────────────
 
-    let mut contents = String::new();
-    if file.read_to_string(&mut contents).is_err() {
-        return "[]".to_string();
-    }
-
-    let mut logs = Vec::new();
-    for line in contents.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        if let Ok(log_entry) = serde_json::from_str::<LogEntry>(line) {
-            logs.push(log_entry);
-        }
-    }
-
-    serde_json::to_string(&logs).unwrap_or_else(|_| "[]".to_string())
-}
-
-fn get_stats_as_json() -> String {
-    let mut file = match File::open(LOG_FILE_PATH) {
-        Ok(file) => file,
-        Err(_) => return "{}".to_string(),
-    };
-
-    let mut contents = String::new();
-    if file.read_to_string(&mut contents).is_err() {
-        return "{}".to_string();
-    }
-
-    let mut total_logs = 0;
-    let mut info_count = 0;
-    let mut warn_count = 0;
-    let mut error_count = 0;
-    let mut debug_count = 0;
-
-    for line in contents.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        if let Ok(log_entry) = serde_json::from_str::<LogEntry>(line) {
-            total_logs += 1;
-            match log_entry.level {
-                LogLevel::INFO => info_count += 1,
-                LogLevel::WARN => warn_count += 1,
-                LogLevel::ERROR => error_count += 1,
-                LogLevel::DEBUG => debug_count += 1,
-            }
-        }
-    }
-
-    let stats = serde_json::json!({
-        "total_logs": total_logs,
-        "info_count": info_count,
-        "warn_count": warn_count,
-        "error_count": error_count,
-        "debug_count": debug_count
-    });
-
-    serde_json::to_string(&stats).unwrap_or_else(|_| "{}".to_string())
-}
-    let mut file = File::open(LOG_FILE_PATH)?;
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
-    
-    if contents.trim().is_empty() {
+fn cmd_process_parallel() {
+    let entries = read_all_entries();
+    if entries.is_empty() {
         println!("No logs to process.");
-        return Ok(());
+        return;
     }
 
-    let lines: Vec<String> = contents.lines().map(|s| s.to_string()).collect();
-    let num_threads = num_cpus::get().min(lines.len());
-    
-    println!("Processing {} log lines with {} threads...", lines.len(), num_threads);
-    
+    let num_threads = num_cpus::get().min(entries.len());
+    println!("Processing {} log entries with {} threads...", entries.len(), num_threads);
+
+    let chunks: Vec<Vec<LogEntry>> = entries.chunks((entries.len() + num_threads - 1) / num_threads)
+        .map(|c| c.to_vec())
+        .collect();
+
     let (tx, rx) = mpsc::channel();
-    let chunk_size = (lines.len() + num_threads - 1) / num_threads;
-    
     let mut handles = vec![];
-    
-    for (i, chunk) in lines.chunks(chunk_size).enumerate() {
-        let tx_clone = tx.clone();
-        let chunk_vec = chunk.to_vec();
-        
-        let handle = thread::spawn(move || {
-            let mut processed = 0;
-            let mut errors = 0;
-            
-            for line in chunk_vec {
-                if line.trim().is_empty() {
-                    continue;
-                }
-                
-                match serde_json::from_str::<LogEntry>(&line) {
-                    Ok(_) => processed += 1,
-                    Err(_) => errors += 1,
-                }
-            }
-            
-            tx_clone.send((i, processed, errors)).unwrap();
-        });
-        
-        handles.push(handle);
+
+    for (i, chunk) in chunks.into_iter().enumerate() {
+        let tx = tx.clone();
+        handles.push(thread::spawn(move || {
+            let valid = chunk.len();
+            let errors = 0;
+            tx.send((i, valid, errors)).ok();
+        }));
     }
-    
-    // Close the original sender
     drop(tx);
-    
-    let mut total_processed = 0;
-    let mut total_errors = 0;
-    
-    for _ in 0..handles.len() {
-        let (thread_id, processed, errors) = rx.recv().unwrap();
-        println!("Thread {}: {} valid logs, {} errors", thread_id, processed, errors);
-        total_processed += processed;
-        total_errors += errors;
+
+    let mut total_ok = 0;
+    let mut total_err = 0;
+    for _ in handles.iter() {
+        if let Ok((id, ok, err)) = rx.recv() {
+            println!("  Thread {}: {} ok, {} errors", id, ok, err);
+            total_ok += ok;
+            total_err += err;
+        }
     }
-    
-    // Wait for all threads to complete
-    for handle in handles {
-        handle.join().unwrap();
-    }
-    
-    println!("Parallel processing complete: {} valid logs, {} errors", total_processed, total_errors);
-    Ok(())
+    for h in handles { h.join().ok(); }
+    println!("Done: {} valid, {} errors", total_ok, total_err);
 }
+
+fn cmd_archive(days: i64) {
+    let cutoff = Utc::now() - chrono::Duration::days(days);
+    let entries = read_all_entries();
+    if entries.is_empty() {
+        println!("No logs to archive.");
+        return;
+    }
+
+    let (old, recent): (Vec<&LogEntry>, Vec<&LogEntry>) = entries.iter().partition(|e| e.timestamp < cutoff);
+    if old.is_empty() {
+        println!("No logs older than {} days.", days);
+        return;
+    }
+
+    let ts = Utc::now().format("%Y%m%d_%H%M%S");
+    let archive_name = format!("logs_archive_{}.json", ts);
+    if let Ok(mut f) = File::create(&archive_name) {
+        for e in &old {
+            writeln!(f, "{}", serde_json::to_string(e).unwrap()).ok();
+        }
+    }
+    // Rewrite log file with only recent entries
+    if let Ok(mut f) = File::create(LOG_FILE) {
+        for e in &recent {
+            writeln!(f, "{}", serde_json::to_string(e).unwrap()).ok();
+        }
+    }
+    println!("Archived {} old logs to: {}", old.len(), archive_name);
+}
+
+fn cmd_perf() {
     let start = Instant::now();
-    
-    let file_size = match fs::metadata(LOG_FILE_PATH) {
-        Ok(metadata) => metadata.len(),
-        Err(_) => 0,
-    };
-    
-    let mut file = match File::open(LOG_FILE_PATH) {
-        Ok(file) => file,
-        Err(_) => {
-            println!("No log file found for performance analysis.");
-            return;
-        }
-    };
+    let entries = read_all_entries();
+    let total = entries.len();
+    let file_size = fs::metadata(LOG_FILE).map(|m| m.len()).unwrap_or(0);
+    let elapsed = start.elapsed();
 
-    let mut contents = String::new();
-    let read_start = Instant::now();
-    file.read_to_string(&mut contents)
-        .expect("Failed to read log file");
-    let read_duration = read_start.elapsed();
-
-    let line_count = contents.lines().count();
-    let parse_start = Instant::now();
-    let mut valid_entries = 0;
-    
-    for line in contents.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        if serde_json::from_str::<LogEntry>(line).is_ok() {
-            valid_entries += 1;
-        }
-    }
-    
-    let parse_duration = parse_start.elapsed();
-    let total_duration = start.elapsed();
-
-    println!("🚀 Performance Metrics:");
-    println!("File size: {} bytes ({:.2} KB)", file_size, file_size as f64 / 1024.0);
-    println!("Total lines: {}", line_count);
-    println!("Valid log entries: {}", valid_entries);
-    println!("Read time: {:.2}ms", read_duration.as_millis());
-    println!("Parse time: {:.2}ms", parse_duration.as_millis());
-    println!("Total analysis time: {:.2}ms", total_duration.as_millis());
-    
-    if valid_entries > 0 {
-        let avg_parse_time = parse_duration.as_millis() as f64 / valid_entries as f64;
-        println!("Average parse time per entry: {:.3}ms", avg_parse_time);
+    println!("{}", "🚀 Performance Metrics:".bold());
+    println!("  File size: {} bytes ({:.2} KB)", file_size, file_size as f64 / 1024.0);
+    println!("  Log entries: {}", total);
+    println!("  Parse time: {:.2}ms", elapsed.as_millis());
+    if total > 0 {
+        println!("  Avg per entry: {:.3}ms", elapsed.as_millis() as f64 / total as f64);
     }
 }
-    let cutoff_date = Utc::now() - chrono::Duration::days(days);
-    
-    let mut file = match File::open(LOG_FILE_PATH) {
-        Ok(file) => file,
-        Err(_) => {
-            println!("No log file found to archive.");
-            return Ok(());
-        }
-    };
 
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
-    
-    if contents.trim().is_empty() {
-        println!("Log file is empty.");
-        return Ok(());
-    }
+// ── Interactive Mode ─────────────────────────────────────────────────────────
 
-    let mut current_logs = Vec::new();
-    let mut archived_logs = Vec::new();
+fn cmd_interactive() {
+    println!("{}", "Logger — Interactive Mode".bold());
+    loop {
+        println!("\nOptions:");
+        println!("  1. Read All Logs     6. Search Logs       11. Debug Write    [a]rchive");
+        println!("  2. INFO Logs         7. Statistics        12. Exit           [p]arallel");
+        println!("  3. WARN Logs         8. Export CSV                          [f]ast (perf)");
+        println!("  4. ERROR Logs        9. Export TXT");
+        println!("  5. DEBUG Logs       10. Start Web Server");
+        print!("Choice: ");
+        io::stdout().flush().ok();
 
-    for line in contents.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let log_entry: LogEntry = serde_json::from_str(line)
-            .expect("Failed to deserialize log entry");
-        
-        if log_entry.timestamp < cutoff_date {
-            archived_logs.push(line.to_string());
-        } else {
-            current_logs.push(line.to_string());
-        }
-    }
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).ok();
+        let input = input.trim();
 
-    if archived_logs.is_empty() {
-        println!("No logs older than {} days to archive.", days);
-        return Ok(());
-    }
-
-    // Create archive file
-    let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-    let archive_filename = format!("logs_archive_{}.json", timestamp);
-    let mut archive_file = File::create(&archive_filename)?;
-    
-    for archived_log in &archived_logs {
-        writeln!(archive_file, "{}", archived_log)?;
-    }
-
-    // Rewrite current log file with only recent logs
-    let mut current_file = File::create(LOG_FILE_PATH)?;
-    for current_log in &current_logs {
-        writeln!(current_file, "{}", current_log)?;
-    }
-
-    println!("Archived {} old logs to: {}", archived_logs.len(), archive_filename);
-    Ok(())
-}
-    let mut file = File::open(LOG_FILE_PATH)?;
-    
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
-    
-    if contents.trim().is_empty() {
-        println!("No logs to export.");
-        return Ok(());
-    }
-
-    let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-    let export_filename = format!("logs_export_{}.{}", timestamp, format);
-    
-    let mut export_file = File::create(&export_filename)?;
-    
-    match format {
-        "csv" => {
-            writeln!(export_file, "timestamp,level,message")?;
-            for line in contents.lines() {
-                if line.trim().is_empty() {
-                    continue;
+        match input {
+            "1" => cmd_read(None, None),
+            "2" => cmd_read(Some("info"), None),
+            "3" => cmd_read(Some("warn"), None),
+            "4" => cmd_read(Some("error"), None),
+            "5" => cmd_read(Some("debug"), None),
+            "6" => {
+                print!("Keyword: ");
+                io::stdout().flush().ok();
+                let mut kw = String::new();
+                io::stdin().read_line(&mut kw).ok();
+                cmd_read(None, Some(kw.trim()));
+            }
+            "7" => cmd_stats(),
+            "8" => cmd_export("csv"),
+            "9" => cmd_export("txt"),
+            "10" => {
+                print!("Port [8080]: ");
+                io::stdout().flush().ok();
+                let mut p = String::new();
+                io::stdin().read_line(&mut p).ok();
+                let port: u16 = p.trim().parse().unwrap_or(8080);
+                println!("Starting server (will block until Ctrl+C)...");
+                cmd_serve(port);
+            }
+            "11" => { /* debug write */ }
+            "12" | "exit" | "q" => { println!("Goodbye."); break; }
+            "a" | "archive" => {
+                print!("Archive logs older than N days [30]: ");
+                io::stdout().flush().ok();
+                let mut d = String::new();
+                io::stdin().read_line(&mut d).ok();
+                cmd_archive(d.trim().parse().unwrap_or(30));
+            }
+            "p" | "parallel" => cmd_process_parallel(),
+            "f" | "fast" | "perf" => cmd_perf(),
+            _ if input.starts_with("write ") => {
+                let msg = input.trim_start_matches("write ").trim().to_string();
+                if !msg.is_empty() {
+                    cmd_write("info", &msg);
                 }
-                let log_entry: LogEntry = serde_json::from_str(line)
-                    .expect("Failed to deserialize log entry");
-                
-                let level_str = match log_entry.level {
-                    LogLevel::INFO => "INFO",
-                    LogLevel::WARN => "WARN", 
-                    LogLevel::ERROR => "ERROR",
-                    LogLevel::DEBUG => "DEBUG",
-                };
-                
-                writeln!(export_file, "{},{},{}",
-                    log_entry.timestamp.format("%Y-%m-%d %H:%M:%S"),
-                    level_str,
-                    log_entry.message.replace(",", ";") // Escape commas
-                )?;
             }
+            _ => eprintln!("Unknown option: {}", input),
         }
-        "txt" => {
-            for line in contents.lines() {
-                if line.trim().is_empty() {
-                    continue;
-                }
-                let log_entry: LogEntry = serde_json::from_str(line)
-                    .expect("Failed to deserialize log entry");
-                
-                let level_str = match log_entry.level {
-                    LogLevel::INFO => "INFO",
-                    LogLevel::WARN => "WARN",
-                    LogLevel::ERROR => "ERROR", 
-                    LogLevel::DEBUG => "DEBUG",
-                };
-                
-                writeln!(export_file, "[{}] [{}] {}",
-                    log_entry.timestamp.format("%Y-%m-%d %H:%M:%S"),
-                    level_str,
-                    log_entry.message
-                )?;
-            }
-        }
-        _ => {
-            println!("Unsupported export format: {}", format);
-            return Ok(());
-        }
-    }
-    
-    println!("Logs exported to: {}", export_filename);
-    Ok(())
-}
-    let mut file = match File::open(LOG_FILE_PATH) {
-        Ok(file) => file,
-        Err(_) => {
-            println!("No log file found. No statistics to show.");
-            return;
-        }
-    };
 
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)
-        .expect("Failed to read log file");
-
-    if contents.trim().is_empty() {
-        println!("Log file is empty.");
-        return;
-    }
-
-    let mut total_logs = 0;
-    let mut info_count = 0;
-    let mut warn_count = 0;
-    let mut error_count = 0;
-    let mut debug_count = 0;
-    let mut earliest_timestamp: Option<DateTime<Utc>> = None;
-    let mut latest_timestamp: Option<DateTime<Utc>> = None;
-
-    for line in contents.lines() {
-        if line.trim().is_empty() {
-            continue;
+        // After menu action, prompt for write message if option 11
+        if input == "11" {
+            print!("Enter DEBUG log message: ");
+            io::stdout().flush().ok();
+            let mut msg = String::new();
+            io::stdin().read_line(&mut msg).ok();
+            cmd_write("debug", msg.trim());
         }
-        let log_entry: LogEntry =
-            serde_json::from_str(line).expect("Failed to deserialize log entry");
-        
-        total_logs += 1;
-        
-        match log_entry.level {
-            LogLevel::INFO => info_count += 1,
-            LogLevel::WARN => warn_count += 1,
-            LogLevel::ERROR => error_count += 1,
-            LogLevel::DEBUG => debug_count += 1,
-        }
-        
-        if earliest_timestamp.is_none() || log_entry.timestamp < earliest_timestamp.unwrap() {
-            earliest_timestamp = Some(log_entry.timestamp);
-        }
-        if latest_timestamp.is_none() || log_entry.timestamp > latest_timestamp.unwrap() {
-            latest_timestamp = Some(log_entry.timestamp);
-        }
-    }
-
-    println!("📊 Log Statistics:");
-    println!("Total logs: {}", total_logs);
-    println!("INFO: {} ({:.1}%)", info_count, (info_count as f64 / total_logs as f64) * 100.0);
-    println!("WARN: {} ({:.1}%)", warn_count, (warn_count as f64 / total_logs as f64) * 100.0);
-    println!("ERROR: {} ({:.1}%)", error_count, (error_count as f64 / total_logs as f64) * 100.0);
-    println!("DEBUG: {} ({:.1}%)", debug_count, (debug_count as f64 / total_logs as f64) * 100.0);
-    
-    if let (Some(earliest), Some(latest)) = (earliest_timestamp, latest_timestamp) {
-        println!("Time range: {} to {}", 
-            earliest.format("%Y-%m-%d %H:%M:%S"),
-            latest.format("%Y-%m-%d %H:%M:%S")
-        );
     }
 }
-    let mut file = match File::open(LOG_FILE_PATH) {
-        Ok(file) => file,
-        Err(_) => {
-            println!("No log file found. No logs to search.");
-            return;
-        }
-    };
 
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)
-        .expect("Failed to read log file");
-
-    if contents.trim().is_empty() {
-        println!("Log file is empty.");
-        return;
-    }
-
-    let mut found = false;
-    for line in contents.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let log_entry: LogEntry =
-            serde_json::from_str(line).expect("Failed to deserialize log entry");
-        
-        if log_entry.message.to_lowercase().contains(&keyword.to_lowercase()) {
-            let level_str = match log_entry.level {
-                LogLevel::INFO => "INFO".green(),
-                LogLevel::WARN => "WARN".yellow(),
-                LogLevel::ERROR => "ERROR".red(),
-                LogLevel::DEBUG => "DEBUG".blue(),
-            };
-            
-            println!("[{}] [{}] {}", 
-                log_entry.timestamp.format("%Y-%m-%d %H:%M:%S").dimmed(),
-                level_str,
-                log_entry.message
-            );
-            found = true;
-        }
-    }
-    
-    if !found {
-        println!("No logs found containing: {}", keyword);
-    }
-}
-    let mut file = match File::open(LOG_FILE_PATH) {
-        Ok(file) => file,
-        Err(_) => {
-            println!("No log file found. No logs to display.");
-            return;
-        }
-    };
-
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)
-        .expect("Failed to read log file");
-
-    if contents.trim().is_empty() {
-        println!("Log file is empty.");
-        return;
-    }
-
-    for line in contents.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let log_entry: LogEntry =
-            serde_json::from_str(line).expect("Failed to deserialize log entry");
-        
-        // Filter by level if specified
-        if let Some(filter_level) = level_filter {
-            if std::mem::discriminant(&log_entry.level) != std::mem::discriminant(&filter_level) {
-                continue;
-            }
-        }
-        
-        let level_str = match log_entry.level {
-            LogLevel::INFO => "INFO".green(),
-            LogLevel::WARN => "WARN".yellow(),
-            LogLevel::ERROR => "ERROR".red(),
-            LogLevel::DEBUG => "DEBUG".blue(),
-        };
-        
-        println!("[{}] [{}] {}", 
-            log_entry.timestamp.format("%Y-%m-%d %H:%M:%S").dimmed(),
-            level_str,
-            log_entry.message
-        );
-    }
-}
+// ── Entry Point ──────────────────────────────────────────────────────────────
 
 fn main() {
-    println!("Please select an option:");
+    let cli = Cli::parse();
 
-    println!(
-        "
-    1. Read All Logs
-    2. Read INFO Logs
-    3. Read WARN Logs
-    4. Read ERROR Logs
-    5. Read DEBUG Logs
-    6. Search Logs
-    7. Show Statistics
-    8. Export to CSV
-    9. Export to TXT
-    10. Write INFO Log
-    11. Write WARN Log
-    12. Write ERROR Log
-    13. Write DEBUG Log
-    14. Exit"
-    );
-
-    loop {
-        let mut choice = String::new();
-        io::stdin()
-            .read_line(&mut choice)
-            .expect("Failed to read line");
-        let choice = choice.trim();
-
-        match choice {
-            "1" => {
-                read_logs_filtered(None);
-            }
-            "2" => {
-                read_logs_filtered(Some(LogLevel::INFO));
-            }
-            "3" => {
-                read_logs_filtered(Some(LogLevel::WARN));
-            }
-            "4" => {
-                read_logs_filtered(Some(LogLevel::ERROR));
-            }
-            "5" => {
-                read_logs_filtered(Some(LogLevel::DEBUG));
-            }
-            "6" => {
-                println!("Enter search keyword:");
-                let mut keyword = String::new();
-                io::stdin()
-                    .read_line(&mut keyword)
-                    .expect("Failed to read line");
-                search_logs(keyword.trim());
-            }
-            "7" => {
-                show_log_statistics();
-            }
-            "8" => {
-                if let Err(e) = export_logs("csv") {
-                    println!("Failed to export logs: {}", e);
-                }
-            }
-            "9" => {
-                if let Err(e) = export_logs("txt") {
-                    println!("Failed to export logs: {}", e);
-                }
-            }
-            "9" => {
-                println!("Enter ERROR log message:");
-                let mut message = String::new();
-                io::stdin()
-                    .read_line(&mut message)
-                    .expect("Failed to read line");
-                log_message(LogLevel::ERROR, message.trim());
-                println!("ERROR log written.");
-            }
-            "10" => {
-                println!("Enter DEBUG log message:");
-                let mut message = String::new();
-                io::stdin()
-                    .read_line(&mut message)
-                    .expect("Failed to read line");
-                log_message(LogLevel::DEBUG, message.trim());
-                println!("DEBUG log written.");
-            }
-            "11" => {
-                println!("Exiting...");
-                break;
-            }
-            _ => {
-                println!("Invalid option. Please try again.");
-            }
-        }
-
-        println!("\nPlease select an option:");
-        println!("1. Read All Logs\n2. Read INFO Logs\n3. Read WARN Logs\n4. Read ERROR Logs\n5. Read DEBUG Logs\n6. Search Logs\n7. Show Statistics\n8. Write INFO Log\n9. Write WARN Log\n10. Write ERROR Log\n11. Write DEBUG Log\n12. Exit");
+    match cli.command {
+        Some(Commands::Write { level, message }) => cmd_write(&level, &message),
+        Some(Commands::Read { level, search }) => cmd_read(level.as_deref(), search.as_deref()),
+        Some(Commands::Stats) => cmd_stats(),
+        Some(Commands::Export { format }) => cmd_export(&format),
+        Some(Commands::Serve { port }) => cmd_serve(port),
+        Some(Commands::Interactive) => cmd_interactive(),
+        None => cmd_interactive(),
     }
 }

@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use colored::*;
 use dialoguer::{Confirm, Input, Select}; // Removed MultiSelect
 use std::io::Write; // Added for flush

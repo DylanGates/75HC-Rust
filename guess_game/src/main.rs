@@ -1,9 +1,12 @@
 use std::io;
+use rand::Rng;
 
 fn guess_number() {
     println!("Guess the number between 1 and 100!");
 
-    let secret_number = rand::thread_rng().gen_range(1..=100);
+    // rand 0.9: thread_rng() is deprecated; use rng() and import Rng for gen_range
+    let mut rng = rand::rng();
+    let secret_number = rng.gen_range(1..=100);
 
     loop {
         println!("Please input your guess:");

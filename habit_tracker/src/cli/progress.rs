@@ -1,5 +1,5 @@
 use colored::*;
-use std::io::{self, Write}; // Keep this, it's used
+ // Keep this, it's used
 
 pub struct ProgressBar {
     width: usize,
