@@ -1,0 +1,9 @@
+[package]
+name = "mini-crate"
+version = "0.1.0"
+edition = "2021"
+description = "A small string utility library + CLI"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"

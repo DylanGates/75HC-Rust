@@ -1,0 +1,11 @@
+[package]
+name = "http-server"
+version = "0.1.0"
+edition = "2021"
+description = "A tiny static file HTTP server"
+
+[dependencies]
+tiny_http = "0.12"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+mime_guess = "2"

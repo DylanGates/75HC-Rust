@@ -1,0 +1,15 @@
+[package]
+name = "mini-async-fetcher"
+version = "0.1.0"
+edition = "2021"
+description = "Fetch multiple URLs concurrently with progress and timing"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"
+tokio-util = "0.7"
