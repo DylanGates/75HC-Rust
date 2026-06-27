@@ -1,45 +1,49 @@
 # 🦀 75 Hard Code Challenge: Rust Projects
 
-This repository contains all **19 mini-projects** built in **Rust** as part of the 75-Day Coding Challenge. The goal is to build something small every day and consistently push to GitHub, mastering command-line utilities, system programming concepts, and asynchronous operations in Rust.
+This repository contains **21 mini-projects** built in **Rust** as part of the 75-Day Coding Challenge. Covers command-line utilities, web servers, database backends, concurrent programming, and async operations.
 
 ## Challenge Focus
 
-- **System Tools:** Building fast, efficient command-line interface (CLI) applications.
-- **Concurrency:** Exploring Rust's powerful concurrency features (`async`/`await`).
-- **Crates Ecosystem:** Using and contributing to external crates (e.g., `clap`, `reqwest`, `serde`).
+- **System Tools:** Fast, efficient CLI applications.
+- **Concurrency:** `async`/`await`, threads, channels, `rayon`.
+- **Crates Ecosystem:** `clap`, `reqwest`, `serde`, `tokio`, `axum`, `sqlx`, etc.
 
 ## Repository Structure
 
-Each daily project lives in its own dedicated, self-contained folder:
+Each project lives in its own self-contained folder:
 
 ```bash
 75HC-Rust/
-├── DXX_ProjectName/
-│   ├── Cargo.toml          // Project dependencies
-│   └── src/main.rs         // The main application code
-└── README.md               // Overview and project tracking (this file)
+├── ProjectName/
+│   ├── Cargo.toml
+│   └── src/main.rs
+└── README.md
 ```
 
 ## Rust Project Tracker
 
-|   Day   |     Week     | Project Description                                                                 | Status | Folder Link                                                                                |
-| :-----: | :----------: | :---------------------------------------------------------------------------------- | :----- | :----------------------------------------------------------------------------------------- |
-| **D1**  |   Warm-Up    | CLI Greeter                                                                         | To Do  | [`D01_CLIGreeter`](./D01_CLIGreeter)                                                       |
-| **D5**  |   Warm-Up    | Temperature Converter                                                               | To Do  | [`D05_TempConverter`](./D05_TempConverter)                                                 |
-| **D9**  |   Warm-Up    | Word Counter (from file input)                                                      | To Do  | [`D09_WordCounter`](./D09_WordCounter)                                                     |
-| **D13** |   Warm-Up    | Guessing Game remake                                                                | To Do  | [`D13_GuessingGame`](./D13_GuessingGame)                                                   |
-| **D17** |   Warm-Up    | Mini To-Do CLI                                                                      | To Do  | [`D17_MiniTodoCLI`](./D17_MiniTodoCLI)                                                     |
-| **D21** |   Warm-Up    | Simple logging utility                                                              | To Do  | [`D21_LoggingUtility`](./D21_LoggingUtility)                                               |
-| **D25** | Intermediate | Config file reader (TOML/YAML)                                                      | To Do  | [`D25_ConfigFileReader`](./D25_ConfigFileReader)                                           |
-| **D29** | Intermediate | URL shortener (local, stores mappings in a file)                                    | To Do  | [`D29_URLShortener`](./D29_URLShortener)                                                   |
-| **D33** | Intermediate | Simple database (JSON file, CRUD functions for a data struct)                       | To Do  | [`D33_SimpleDatabase`](./D33_SimpleDatabase)                                               |
-| **D37** | Intermediate | CLI Habit Tracker (check-in/status)                                                 | To Do  | [`D37_CLIHabitTracker`](./D37_CLIHabitTracker)                                             |
-| **D41** | Intermediate | Random password generator (with CLI flags for options)                              | To Do  | [`D41_RandomPasswordGenerator`](./D41_RandomPasswordGenerator)                             |
-| **D45** | Intermediate | Mini async fetcher (reqwest, fetch multiple URLs concurrently)                      | To Do  | [`D45_MiniAsyncFetcher`](./D45_MiniAsyncFetcher)                                           |
-| **D49** |   Advanced   | HTTP server (tiny, serving static files)                                            | To Do  | [`D49_HTTPServer`](./D49_HTTPServer)                                                       |
-| **D53** |   Advanced   | Multi-threaded downloader (download parts of a file concurrently)                   | To Do  | [`D53_MultiThreadedDownloader`](./D53_MultiThreadedDownloader)                             |
-| **D57** |   Advanced   | CLI Pomodoro (timer with notifications)                                             | To Do  | [`D57_CLIPomodoro`](./D57_CLIPomodoro)                                                     |
-| **D61** |   Advanced   | Todo app with saving (use JSON file)                                                | To Do  | [`D61_TodoAppWithSaving`](./D61_TodoAppWithSaving)                                         |
-| **D65** |   Advanced   | Mini crate (string tools, publish to crates.io as a learning exercise)              | To Do  | [`D65_MiniCrate`](./D65_MiniCrate)                                                         |
-| **D69** |    Final     | Capstone Day 1: Simple Static Site Generator (takes markdown, outputs HTML)         | To Do  | [`D69_SimpleStaticSiteGenerator`](./D69_SimpleStaticSiteGenerator)                         |
-| **D73** |    Final     | Capstone Day 2: Refactoring, error handling, and documentation for Capstone project | To Do  | [`D73_RefactoringErrorHandlingDocumentation`](./D73_RefactoringErrorHandlingDocumentation) |
+| Day | Week | Project | Folder |
+| :-: | :--: | :------ | :----- |
+| D1  | Warm-Up | CLI Greeter | [`CLIGreeter`](./CLIGreeter) |
+| D5  | Warm-Up | Temperature Converter (C/F/K) | [`temp_converter`](./temp_converter) |
+| D9  | Warm-Up | Word/char counter w/ parallelism | [`word_counter`](./word_counter) |
+| D13 | Warm-Up | Guessing game | [`guess_game`](./guess_game) |
+| D17 | Warm-Up | Mini To-Do CLI | [`todo_cli`](./todo_cli) |
+| D21 | Warm-Up | Logging utility w/ web UI | [`logger`](./logger) |
+| D25 | Intermediate | Config reader (TOML/YAML/JSON/env) | [`config_reader`](./config_reader) |
+| D29 | Intermediate | URL shortener w/ aliases & hit tracking | [`url_shortener`](./url_shortener) |
+| D33 | Intermediate | JSON file CRUD database | [`simple_crud`](./simple_crud) |
+| D37 | Intermediate | Habit tracker CLI | [`habit_tracker`](./habit_tracker) |
+| D41 | Intermediate | Password generator w/ entropy | [`password_manager`](./password_manager) |
+| D45 | Intermediate | Async URL fetcher (concurrent) | [`MiniAsyncFetcher`](./MiniAsyncFetcher) |
+| D49 | Advanced | Static file HTTP server | [`HTTPServer`](./HTTPServer) |
+| D53 | Advanced | Multi-threaded downloader | [`MultiThreadedDownloader`](./MultiThreadedDownloader) |
+| D57 | Advanced | Pomodoro timer CLI | [`CLIPomodoro`](./CLIPomodoro) |
+| D61 | Advanced | Persistent todo app (JSON) | [`TodoAppWithSaving`](./TodoAppWithSaving) |
+| D65 | Advanced | String utility lib + CLI | [`MiniCrate`](./MiniCrate) |
+| D69 | Final | Static site generator (Markdown → HTML) | [`SimpleStaticSiteGenerator`](./SimpleStaticSiteGenerator) |
+| —  | Backend | Book API (Axum + SQLx + PostgreSQL) | [`backend_db`](./backend_db) |
+| —  | Backend | Book API (Axum + MongoDB + Redis + Docker) | [`backend_mongo`](./backend_mongo) |
+| D73 | Final | Architecture & testing docs | [`CapstonePolish`](./CapstonePolish) |
+
+All projects compile (tested) and are ready to run with `cargo run`. Build artifacts are gitignored.
